@@ -1889,10 +1889,6 @@ function generateNavMenu(pages, parentId = '', basePath = '') {
     return '';
   }
   
-  // Calculate path to root based on depth of current page
-  const depth = basePath ? basePath.split('/').filter(Boolean).length : 0;
-  const pathToRoot = depth > 0 ? '../'.repeat(depth + 1) : './';
-  
   // Process pages to merge directories and content pages with the same name
   const processedPages = [];
   const nameMap = {};
@@ -1964,9 +1960,9 @@ function generateNavMenu(pages, parentId = '', basePath = '') {
         menu += `<span class="toggle-placeholder">📁</span>`;
       }
       
-      // Add link to the directory itself
+      // Store the page path in data attribute instead of using direct href
       const dirPath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
-      menu += `<a href="${pathToRoot}pages/${dirPath}/index.html">${page.title}</a>`;
+      menu += `<a href="javascript:void(0);" class="nav-link" data-page-path="${dirPath}" onclick="navigateToPage(this)">${page.title}</a>`;
       menu += `</div>`;
       
       if (page.children && page.children.length > 0) {
@@ -1976,12 +1972,11 @@ function generateNavMenu(pages, parentId = '', basePath = '') {
         menu += `<div id="${childrenId}" class="nav-children collapsed">${childrenMenu}</div>`;
       }
     } else {
-      // Page
-      // Make sure to include the full path for the page
+      // Page - store the page path in data attribute instead of using direct href
       const pagePath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
       menu += `<div class="nav-item-header">
         <span class="toggle-placeholder">📄</span>
-        <a href="${pathToRoot}pages/${pagePath}/index.html">${page.title}</a>
+        <a href="javascript:void(0);" class="nav-link" data-page-path="${pagePath}" onclick="navigateToPage(this)">${page.title}</a>
       </div>`;
     }
     
@@ -1989,6 +1984,42 @@ function generateNavMenu(pages, parentId = '', basePath = '') {
   }
   
   menu += '</ul>';
+  
+  // Add navigation script to the first call (root menu only)
+  if (!parentId) {
+    menu += `
+    <script>
+      // Navigation function that handles all menu clicks
+      function navigateToPage(linkElement) {
+        const pagePath = linkElement.getAttribute('data-page-path');
+        if (pagePath) {
+          // Get the root path (path to the site root)
+          let rootPath = '';
+          
+          // Determine the root path based on current URL
+          const currentPath = window.location.pathname;
+          
+          if (currentPath.includes('/pages/')) {
+            // We're in a page, need to navigate up to root
+            const parts = currentPath.split('/pages/')[0];
+            rootPath = parts + '/';
+          } else if (currentPath.endsWith('index.html')) {
+            // We're at the root index
+            rootPath = currentPath.replace('index.html', '');
+          } else {
+            // Fallback - assume we're at root
+            rootPath = '/';
+          }
+          
+          // Construct the full URL and navigate
+          const pageUrl = rootPath + 'pages/' + pagePath + '/index.html';
+          console.log('Navigating to: ' + pageUrl);
+          window.location.href = pageUrl;
+        }
+      }
+    </script>`;
+  }
+  
   return menu;
 }
 
