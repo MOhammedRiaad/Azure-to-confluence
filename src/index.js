@@ -3,7 +3,7 @@ const fs = require('fs-extra');
 const { Command } = require('commander');
 const ConfluenceClient = require('./utils/Confluence-API');
 
-const { runLocalTest } = require('./localTester');
+const { runLocalTest } = require('./local/localTester');
 const { getConfig } = require('./confluence/config');
 const { startConfluenceProcess } = require('./confluence');
 const { logger } = require('./utils');
