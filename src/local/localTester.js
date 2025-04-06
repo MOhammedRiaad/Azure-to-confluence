@@ -135,7 +135,8 @@ function generateNavMenu(pages, basePath = '') {
       const mergedPage = {
         ...dirPage,
         hasFileContent: true,
-        filePath: filePage.path
+        filePath: filePage.path,
+        isContentPage: true // Mark that this page has actual content
       };
       mergedPages.push(mergedPage);
     } else if (dirPage) {
@@ -196,15 +197,21 @@ async function createIndexFile(outputPath, wikiStructure) {
   const navMenu = generateNavMenu(wikiStructure.pages);
   
   // Get actual attachment count
-  let attachmentCount = 0;
+  let attachmentCount = countAttachments(wikiStructure);
+  
+  // Double check with the file system
   const attachmentsPath = path.join(outputPath, 'attachments');
   try {
     if (await fs.pathExists(attachmentsPath)) {
       const files = await fs.readdir(attachmentsPath);
-      attachmentCount = files.length;
+      // If file system count is available, use it instead
+      if (files && files.length > 0) {
+        attachmentCount = files.length;
+      }
     }
   } catch (error) {
-    console.error('Error counting attachments:', error);
+    console.error('Error counting attachments from file system:', error);
+    // Fall back to the structure-based count
   }
   
   // Create index.html with a modern, responsive design
@@ -1051,6 +1058,20 @@ function countAttachments(wikiStructure) {
     count += countAttachmentsInDir(wikiStructure.attachments);
   }
   
+  // Also check for .attachments folder directly
+  try {
+    const attachmentsPath = path.join(process.cwd(), '..', '.attachments');
+    if (fs.existsSync(attachmentsPath)) {
+      const files = fs.readdirSync(attachmentsPath);
+      if (files && files.length > 0) {
+        // Use this count if we found files
+        return files.length;
+      }
+    }
+  } catch (error) {
+    console.warn('Error checking .attachments folder:', error.message);
+  }
+  
   // Recursively count attachments in all pages
   const processPages = (pages) => {
     if (!pages || !Array.isArray(pages)) return;
@@ -1237,7 +1258,7 @@ async function createLocalPages(wikiStructure, outputPath, attachmentMappings) {
       }
     }
     
-    // Second pass: create merged pages
+    // Second pass: create merged pages - avoid duplicating content pages
     for (const sanitizedTitle in nameMap) {
       const { dirPage, filePage } = nameMap[sanitizedTitle];
       
@@ -1246,7 +1267,8 @@ async function createLocalPages(wikiStructure, outputPath, attachmentMappings) {
         const mergedPage = {
           ...dirPage,
           hasFileContent: true,
-          filePath: filePage.path
+          filePath: filePage.path,
+          isContentPage: true // Mark that this is both a directory and a content page
         };
         mergedPages.push(mergedPage);
       } else if (dirPage) {
@@ -1613,7 +1635,6 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
           
           <article class="page-content">
             <div class="page-header">
-              <h1>${title}</h1>
               <div class="page-actions">
                 <button id="print-page" class="action-button" title="Print page">
                   <i class="fas fa-print"></i>
@@ -1872,14 +1893,64 @@ function generateNavMenu(pages, parentId = '', basePath = '') {
   const depth = basePath ? basePath.split('/').filter(Boolean).length : 0;
   const pathToRoot = depth > 0 ? '../'.repeat(depth + 1) : './';
   
-  let menu = '<ul class="nav-menu">';
+  // Process pages to merge directories and content pages with the same name
+  const processedPages = [];
+  const nameMap = {};
   
-  for (let i = 0; i < pages.length; i++) {
-    const page = pages[i];
+  // First group pages by sanitized title to avoid duplicates
+  for (const page of pages) {
     if (page.isAttachmentDir) continue;
     
+    const sanitizedTitle = sanitizePathSegment(page.title);
+    
+    if (!nameMap[sanitizedTitle]) {
+      nameMap[sanitizedTitle] = {
+        dirPage: null,
+        filePage: null
+      };
+    }
+    
+    if (page.isDirectory) {
+      nameMap[sanitizedTitle].dirPage = page;
+    } else {
+      nameMap[sanitizedTitle].filePage = page;
+    }
+  }
+  
+  // Create merged pages to eliminate duplicates
+  for (const sanitizedTitle in nameMap) {
+    const { dirPage, filePage } = nameMap[sanitizedTitle];
+    
+    if (dirPage && filePage) {
+      // If both directory and file exist, merge them
+      processedPages.push({
+        ...dirPage,
+        hasFileContent: true,
+        title: dirPage.title, // Use only one title
+        path: filePage.path
+      });
+    } else if (dirPage) {
+      processedPages.push(dirPage);
+    } else if (filePage) {
+      processedPages.push(filePage);
+    }
+  }
+  
+  // Sort pages
+  processedPages.sort((a, b) => {
+    if (a.order !== undefined && b.order !== undefined) {
+      return a.order - b.order;
+    }
+    return a.title.localeCompare(b.title);
+  });
+  
+  let menu = '<ul class="nav-menu">';
+  
+  for (let i = 0; i < processedPages.length; i++) {
+    const page = processedPages[i];
     const itemId = parentId ? `${parentId}-${i}` : `item-${i}`;
     const childrenId = `children-${itemId}`;
+    const sanitizedTitle = sanitizePathSegment(page.title);
     
     menu += '<li class="nav-item">';
     
@@ -1893,19 +1964,24 @@ function generateNavMenu(pages, parentId = '', basePath = '') {
         menu += `<span class="toggle-placeholder">📁</span>`;
       }
       
-      menu += `<span>${page.title}</span>`;
+      // Add link to the directory itself
+      const dirPath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
+      menu += `<a href="${pathToRoot}pages/${dirPath}/index.html">${page.title}</a>`;
       menu += `</div>`;
       
       if (page.children && page.children.length > 0) {
-        const childrenMenu = generateNavMenu(page.children, itemId, basePath);
+        // Pass the full path including this directory to child pages
+        const newBasePath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
+        const childrenMenu = generateNavMenu(page.children, itemId, newBasePath);
         menu += `<div id="${childrenId}" class="nav-children collapsed">${childrenMenu}</div>`;
       }
     } else {
       // Page
-      const sanitizedTitle = sanitizePathSegment(page.title);
+      // Make sure to include the full path for the page
+      const pagePath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
       menu += `<div class="nav-item-header">
         <span class="toggle-placeholder">📄</span>
-        <a href="${pathToRoot}pages/${sanitizedTitle}/index.html">${page.title}</a>
+        <a href="${pathToRoot}pages/${pagePath}/index.html">${page.title}</a>
       </div>`;
     }
     
