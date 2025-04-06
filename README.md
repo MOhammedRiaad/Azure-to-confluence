@@ -36,8 +36,6 @@ npm install
 ### Step 3: Run the setup script
 
 ```bash
-npm run setup
-# or
 node setup.js
 ```
 
@@ -47,37 +45,9 @@ The setup script will:
 - Guide you through setting up the Confluence connection
 - Help locate the wiki content and attachments folders
 
-## Interactive Migration Helper
-
-For an easier experience, you can use the interactive migration helper:
-
-```bash
-npm run migrate
-# or
-node migrate.js
-```
-
-This interactive tool provides a menu-driven interface to:
-1. Setup configuration
-2. Run full migration
-3. Test migration locally
-4. Migrate a single page
-5. Run with debug mode
-6. Update an existing page
-7. Exit
-
 ## Configuration
 
-The tool is configured through environment variables, which can be set in a `.env` file. The setup script will help you create this file, but you can also create or edit it manually using the `.env.example` as a template:
-
-```bash
-# Copy the example config file
-cp .env.example .env
-# Edit with your favorite editor
-nano .env
-```
-
-Configuration options include:
+The tool is configured through environment variables, which can be set in a `.env` file. The setup script will help you create this file, but you can also create or edit it manually.
 
 ```
 # Confluence API Configuration
@@ -87,16 +57,13 @@ CONFLUENCE_API_TOKEN=your-api-token
 
 # Confluence Space Configuration
 CONFLUENCE_SPACE_KEY=SPACE
-CONFLUENCE_PARENT_PAGE_ID=12345678
-
-# Project Configuration
-PROJECT_NAME=Your-Project-Name
+CONFLUENCE_PARENT_PAGE_ID=12345
 
 # Paths Configuration
 AZURE_WIKI_PATH=../Your-Project
+PROJECT_NAME=Your-Project
 WIKI_ROOT_DIR=../Your-Project.wiki
 ATTACHMENTS_PATH=../Your-Project.wiki/.attachments
-OUTPUT_PATH=./output
 ```
 
 ### Obtaining a Confluence API Token
@@ -119,8 +86,6 @@ OUTPUT_PATH=./output
 To run the migration with default settings:
 
 ```bash
-npm start
-# or
 node src/index.js
 ```
 
@@ -138,22 +103,16 @@ This will migrate all pages from your Azure DevOps Wiki to Confluence.
 
 Test migration locally:
 ```bash
-npm run test:local
-# or
 node src/index.js --local
 ```
 
 Migrate a single page:
 ```bash
-npm run migrate:single Getting-Started
-# or
 node src/index.js --singlePage "Getting-Started"
 ```
 
 Migrate with debug information:
 ```bash
-npm run debug
-# or
 node src/index.js --debug
 ```
 

@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node src/index.js",
     "setup": "node setup.js",
-    "migrate": "node migrate.js",
     "test:local": "node src/index.js --local",
     "debug": "node src/index.js --debug",
     "migrate:single": "node src/index.js --singlePage",
@@ -26,6 +25,7 @@
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.8.4",
+    "confluence-api": "^1.4.0",
     "dotenv": "^16.4.7",
     "form-data": "^4.0.2",
     "fs-extra": "^11.3.0",
@@ -36,8 +36,5 @@
   },
   "engines": {
     "node": ">=14.0.0"
-  },
-  "bin": {
-    "wiki-migrate": "./migrate.js"
   }
 }
