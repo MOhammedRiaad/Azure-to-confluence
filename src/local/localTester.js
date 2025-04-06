@@ -221,6 +221,8 @@ function generateNavMenu(pages, parentId = '') {
           } else {
             // Fallback - use current directory
             rootPath = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+            // Navigate up to find the root
+            rootPath = rootPath.substring(0, rootPath.lastIndexOf('pages/')) || rootPath;
           }
           
           console.log('Root path:', rootPath);
@@ -306,6 +308,9 @@ function generateNavMenuChildren(pages, parentId, parentPath) {
  * @returns {Promise<void>}
  */
 async function createIndexFile(outputPath, wikiStructure) {
+  // For the index file, pathToRoot is the current directory
+  const pathToRoot = './';
+  
   // Generate navigation menu
   const navMenu = generateNavMenu(wikiStructure.pages);
   
@@ -334,16 +339,53 @@ async function createIndexFile(outputPath, wikiStructure) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wiki Preview</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="${pathToRoot}styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+  <script>
+  // Improved navigation function that works with relative paths
+  function navigateToPage(linkElement) {
+    const pagePath = linkElement.getAttribute('data-page-path');
+    if (pagePath) {
+      // Get the root path (path to the site root)
+      let rootPath = '';
+      
+      // Determine the root path based on current URL
+      const currentPath = window.location.pathname;
+      console.log('Current path:', currentPath);
+      
+      // Find path up to local-output directory
+      if (currentPath.includes('local-output')) {
+        const pathParts = currentPath.split('local-output');
+        rootPath = pathParts[0] + 'local-output/';
+      } else {
+        // Fallback - use current directory
+        rootPath = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+        // Navigate up to find the root
+        rootPath = rootPath.substring(0, rootPath.lastIndexOf('pages/')) || rootPath;
+      }
+      
+      console.log('Root path:', rootPath);
+      console.log('Page path:', pagePath);
+      
+      // Always construct the URL from the root path to avoid path concatenation issues
+      const pageUrl = rootPath + 'pages/' + pagePath + '/index.html';
+      console.log('Navigating to:', pageUrl);
+      window.location.href = pageUrl;
+    }
+  }
+  </script>
 </head>
 <body>
-  <div class="app-container">
-    <header class="app-header">
+  <div class="wiki-container">
+    <header>
       <div class="header-content">
         <div class="logo">
+         <a href="${pathToRoot}index.html">
           <i class="fas fa-book"></i>
           <h1>Wiki Documentation</h1>
+         </a>
         </div>
         <div class="header-actions">
           <button id="theme-toggle" class="theme-toggle">
@@ -600,22 +642,10 @@ button {
 }
 
 /* Layout */
-.app-container {
+.wiki-container {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-}
-
-.app-header {
-  height: var(--header-height);
-  background-color: var(--bg-light);
-  border-bottom: 1px solid var(--border-color);
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  transition: background-color var(--transition-speed);
 }
 
 .header-content {
@@ -1687,7 +1717,12 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
 async function createHtmlPage(title, html, outputPath, relativePath, wikiStructure) {
   // Calculate the depth to determine the path back to root
   const depth = relativePath.split('/').filter(Boolean).length;
-  const pathToRoot = depth > 0 ? '../'.repeat(depth) : './';
+  
+  // Fix: Correct pathToRoot calculation - we only need to go back depth + 1 levels
+  // (+ 1 for the 'pages' directory)
+  const pathToRoot = depth > 0 ? '../'.repeat(depth + 1) : './';
+  
+  console.log(`Creating page at depth ${depth} with pathToRoot=${pathToRoot} for path=${relativePath}`);
   
   // Generate navigation menu with a clean base path (don't pass relativePath)
   const navMenu = wikiStructure && wikiStructure.pages ? 
@@ -1727,6 +1762,8 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
       } else {
         // Fallback - use current directory
         rootPath = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+        // Navigate up to find the root
+        rootPath = rootPath.substring(0, rootPath.lastIndexOf('pages/')) || rootPath;
       }
       
       console.log('Root path:', rootPath);
@@ -1741,14 +1778,14 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
   </script>
 </head>
 <body>
-  <div class="app-container">
-    <header class="app-header">
+  <div class="wiki-container">
+    <header>
       <div class="header-content">
         <div class="logo">
-          <a href="${pathToRoot}index.html">
-            <i class="fas fa-book"></i>
-            <h1>Wiki Documentation</h1>
-          </a>
+         <a href="${pathToRoot}index.html">
+          <i class="fas fa-book"></i>
+          <h1>Wiki Documentation</h1>
+         </a>
         </div>
         <div class="header-actions">
           <button id="theme-toggle" class="theme-toggle">
@@ -1783,6 +1820,7 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
           
           <article class="page-content">
             <div class="page-header">
+              <h1>${title}</h1>
               <div class="page-actions">
                 <button id="print-page" class="action-button" title="Print page">
                   <i class="fas fa-print"></i>
@@ -1882,6 +1920,7 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
         const target = document.getElementById(targetId);
         target.classList.toggle('collapsed');
         
+        // Change toggle icon
         if (this.textContent === '▶') {
           this.textContent = '▼';
         } else {
@@ -1921,6 +1960,7 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
       const searchTerm = document.getElementById('search-input').value.toLowerCase();
       if (!searchTerm) return;
       
+      // Hide all pages that don't match
       const navItems = document.querySelectorAll('.nav-item');
       let foundAny = false;
       
@@ -1945,6 +1985,7 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
         }
       });
       
+      // Show a message if no results
       const searchResults = document.querySelector('.search-results');
       if (!foundAny) {
         if (!searchResults) {
@@ -1996,6 +2037,7 @@ function generateBreadcrumbs(relativePath) {
   
   // Calculate depth to find path to root
   const depth = pathParts.length;
+  // Fix: Correct pathToRoot calculation - we only need to go back depth + 1 levels
   const pathToRoot = '../'.repeat(depth + 1); // +1 for the 'pages' directory level
   
   // Start with home link
