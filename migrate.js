@@ -77,6 +77,7 @@ async function showMainMenu() {
       break;
     case '7':
       console.log('Exiting. Goodbye!');
+      console.log('OPM Team :)');
       rl.close();
       return;
     default:
