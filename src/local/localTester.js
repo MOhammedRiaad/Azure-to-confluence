@@ -95,19 +95,20 @@ function filterOutProjectDir(pages) {
 /**
  * Generate a hierarchical navigation menu with collapsible sections
  * @param {Array} pages - Pages to include in the menu
- * @param {string} basePath - Base path for links
+ * @param {string} parentId - Parent ID for CSS targeting
  * @returns {string} - HTML for the navigation menu
  */
-function generateNavMenu(pages, basePath = '') {
-  if (!pages || pages.length === 0) return '';
+function generateNavMenu(pages, parentId = '') {
+  if (!pages || !Array.isArray(pages) || pages.length === 0) {
+    return '';
+  }
   
-  // First, identify and merge pages with same name (directory and file)
-  const mergedPages = [];
+  // Process pages to merge directories and content pages with the same name
+  const processedPages = [];
   const nameMap = {};
   
-  // First pass: group by sanitized title
+  // First group pages by sanitized title to avoid duplicates
   for (const page of pages) {
-    // Skip attachment directories
     if (page.isAttachmentDir) continue;
     
     const sanitizedTitle = sanitizePathSegment(page.title);
@@ -126,64 +127,176 @@ function generateNavMenu(pages, basePath = '') {
     }
   }
   
-  // Second pass: create merged pages
+  // Create merged pages to eliminate duplicates
   for (const sanitizedTitle in nameMap) {
     const { dirPage, filePage } = nameMap[sanitizedTitle];
     
     if (dirPage && filePage) {
-      // If both directory and file exist, prefer the directory but use the file's content
-      const mergedPage = {
+      // If both directory and file exist, merge them
+      processedPages.push({
         ...dirPage,
         hasFileContent: true,
-        filePath: filePage.path,
-        isContentPage: true // Mark that this page has actual content
-      };
-      mergedPages.push(mergedPage);
+        title: dirPage.title, // Use only one title
+        path: filePage.path
+      });
     } else if (dirPage) {
-      mergedPages.push(dirPage);
+      processedPages.push(dirPage);
     } else if (filePage) {
-      mergedPages.push(filePage);
+      processedPages.push(filePage);
     }
   }
   
-  // Sort merged pages
-  const sortedPages = [...mergedPages].sort((a, b) => {
-    // Sort by order first, then alphabetically by title
-    if (a.order !== b.order) {
+  // Sort pages
+  processedPages.sort((a, b) => {
+    if (a.order !== undefined && b.order !== undefined) {
       return a.order - b.order;
     }
     return a.title.localeCompare(b.title);
   });
   
-  let html = '<ul class="nav-menu">';
+  let menu = '<ul class="nav-menu">';
   
-  for (const page of sortedPages) {
+  // Track paths to avoid duplicates
+  const pathTracker = new Set();
+  
+  for (let i = 0; i < processedPages.length; i++) {
+    const page = processedPages[i];
+    const itemId = parentId ? `${parentId}-${i}` : `item-${i}`;
+    const childrenId = `children-${itemId}`;
     const sanitizedTitle = sanitizePathSegment(page.title);
-    const hasChildren = page.children && page.children.length > 0 && !page.children.every(p => p.isAttachmentDir);
     
-    const link = basePath ? 
-      `./pages/${path.join(basePath, sanitizedTitle)}/index.html` : 
-      `./pages/${sanitizedTitle}/index.html`;
+    menu += '<li class="nav-item">';
     
-    const itemId = `nav-item-${basePath ? basePath.replace(/[\/\\]/g, '-') + '-' : ''}${sanitizedTitle}`;
-    
-    html += `<li class="nav-item ${hasChildren ? 'has-children' : ''}">
-      <div class="nav-item-header">
-        ${hasChildren ? `<span class="toggle-icon" data-target="${itemId}">▶</span>` : '<span class="toggle-placeholder"></span>'}
-        <a href="${link}">${page.title}</a>
-      </div>`;
-    
-    if (hasChildren) {
-      html += `<div id="${itemId}" class="nav-children collapsed">
-        ${generateNavMenu(page.children, basePath ? path.join(basePath, sanitizedTitle) : sanitizedTitle)}
+    if (page.isDirectory) {
+      // Directory
+      menu += `<div class="nav-item-header">`;
+      
+      if (page.children && page.children.length > 0) {
+        menu += `<span class="toggle-icon" data-target="${childrenId}">▶</span>`;
+      } else {
+        menu += `<span class="toggle-placeholder">📁</span>`;
+      }
+      
+      // Store the page path in data attribute
+      menu += `<a href="javascript:void(0);" class="nav-link" data-page-path="${sanitizedTitle}" onclick="navigateToPage(this)">${page.title}</a>`;
+      menu += `</div>`;
+      
+      if (page.children && page.children.length > 0) {
+        // Generate submenu with this page as the parent path
+        const childrenMenu = generateNavMenuChildren(page.children, itemId, sanitizedTitle);
+        menu += `<div id="${childrenId}" class="nav-children collapsed">${childrenMenu}</div>`;
+      }
+    } else {
+      // Regular page - just use the sanitized title as the path
+      menu += `<div class="nav-item-header">
+        <span class="toggle-placeholder">📄</span>
+        <a href="javascript:void(0);" class="nav-link" data-page-path="${sanitizedTitle}" onclick="navigateToPage(this)">${page.title}</a>
       </div>`;
     }
     
-    html += '</li>';
+    menu += '</li>';
   }
   
-  html += '</ul>';
-  return html;
+  menu += '</ul>';
+  
+  // Add navigation script to the first call (root menu only)
+  if (!parentId) {
+    menu += `
+    <script>
+      // Improved navigation function that works with relative paths
+      function navigateToPage(linkElement) {
+        const pagePath = linkElement.getAttribute('data-page-path');
+        if (pagePath) {
+          // Get the root path (path to the site root)
+          let rootPath = '';
+          
+          // Determine the root path based on current URL
+          const currentPath = window.location.pathname;
+          console.log('Current path:', currentPath);
+          
+          // Find path up to local-output directory
+          if (currentPath.includes('local-output')) {
+            const pathParts = currentPath.split('local-output');
+            rootPath = pathParts[0] + 'local-output/';
+          } else {
+            // Fallback - use current directory
+            rootPath = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+          }
+          
+          console.log('Root path:', rootPath);
+          console.log('Page path:', pagePath);
+          
+          // Always construct the URL from the root path to avoid path concatenation issues
+          const pageUrl = rootPath + 'pages/' + pagePath + '/index.html';
+          console.log('Navigating to:', pageUrl);
+          window.location.href = pageUrl;
+        }
+      }
+    </script>`;
+  }
+  
+  return menu;
+}
+
+/**
+ * Helper function to generate submenu items for child pages
+ * @param {Array} pages - Child pages
+ * @param {string} parentId - Parent ID for CSS targeting
+ * @param {string} parentPath - Path of the parent page 
+ * @returns {string} - HTML for the submenu
+ */
+function generateNavMenuChildren(pages, parentId, parentPath) {
+  if (!pages || !Array.isArray(pages) || pages.length === 0) {
+    return '';
+  }
+  
+  let menu = '<ul class="nav-menu">';
+  
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    if (page.isAttachmentDir) continue;
+    
+    const itemId = `${parentId}-${i}`;
+    const childrenId = `children-${itemId}`;
+    const sanitizedTitle = sanitizePathSegment(page.title);
+    
+    // Create the path with the parent path included
+    const pagePath = `${parentPath}/${sanitizedTitle}`;
+    
+    menu += '<li class="nav-item">';
+    
+    if (page.isDirectory) {
+      // Directory
+      menu += `<div class="nav-item-header">`;
+      
+      if (page.children && page.children.length > 0) {
+        menu += `<span class="toggle-icon" data-target="${childrenId}">▶</span>`;
+      } else {
+        menu += `<span class="toggle-placeholder">📁</span>`;
+      }
+      
+      // Store the full path in data attribute
+      menu += `<a href="javascript:void(0);" class="nav-link" data-page-path="${pagePath}" onclick="navigateToPage(this)">${page.title}</a>`;
+      menu += `</div>`;
+      
+      if (page.children && page.children.length > 0) {
+        // Recursively process children
+        const childrenMenu = generateNavMenuChildren(page.children, itemId, pagePath);
+        menu += `<div id="${childrenId}" class="nav-children collapsed">${childrenMenu}</div>`;
+      }
+    } else {
+      // Regular page
+      menu += `<div class="nav-item-header">
+        <span class="toggle-placeholder">📄</span>
+        <a href="javascript:void(0);" class="nav-link" data-page-path="${pagePath}" onclick="navigateToPage(this)">${page.title}</a>
+      </div>`;
+    }
+    
+    menu += '</li>';
+  }
+  
+  menu += '</ul>';
+  return menu;
 }
 
 /**
@@ -1572,9 +1685,13 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
  * @returns {Promise<void>}
  */
 async function createHtmlPage(title, html, outputPath, relativePath, wikiStructure) {
-  // Generate navigation menu only if wikiStructure is provided, passing the relativePath
+  // Calculate the depth to determine the path back to root
+  const depth = relativePath.split('/').filter(Boolean).length;
+  const pathToRoot = depth > 0 ? '../'.repeat(depth) : './';
+  
+  // Generate navigation menu with a clean base path (don't pass relativePath)
   const navMenu = wikiStructure && wikiStructure.pages ? 
-    generateNavMenu(wikiStructure.pages, '', relativePath) : 
+    generateNavMenu(wikiStructure.pages) : 
     '<div class="no-navigation">Navigation not available</div>';
   
   // Generate breadcrumb navigation
@@ -1587,17 +1704,48 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} - Wiki Preview</title>
-  <link rel="stylesheet" href="${'../'.repeat(relativePath.split('/').filter(Boolean).length + 1)}styles.css">
+  <link rel="stylesheet" href="${pathToRoot}styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+  <script>
+  // Improved navigation function that works with relative paths
+  function navigateToPage(linkElement) {
+    const pagePath = linkElement.getAttribute('data-page-path');
+    if (pagePath) {
+      // Get the root path (path to the site root)
+      let rootPath = '';
+      
+      // Determine the root path based on current URL
+      const currentPath = window.location.pathname;
+      console.log('Current path:', currentPath);
+      
+      // Find path up to local-output directory
+      if (currentPath.includes('local-output')) {
+        const pathParts = currentPath.split('local-output');
+        rootPath = pathParts[0] + 'local-output/';
+      } else {
+        // Fallback - use current directory
+        rootPath = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+      }
+      
+      console.log('Root path:', rootPath);
+      console.log('Page path:', pagePath);
+      
+      // Always construct the URL from the root path to avoid path concatenation issues
+      const pageUrl = rootPath + 'pages/' + pagePath + '/index.html';
+      console.log('Navigating to:', pageUrl);
+      window.location.href = pageUrl;
+    }
+  }
+  </script>
 </head>
 <body>
   <div class="app-container">
     <header class="app-header">
       <div class="header-content">
         <div class="logo">
-          <a href="${'../'.repeat(relativePath.split('/').filter(Boolean).length + 1)}index.html">
+          <a href="${pathToRoot}index.html">
             <i class="fas fa-book"></i>
             <h1>Wiki Documentation</h1>
           </a>
@@ -1657,7 +1805,7 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
           </article>
           
           <div class="page-navigation">
-            <a href="${'../'.repeat(relativePath.split('/').filter(Boolean).length + 1)}index.html" class="nav-link">
+            <a href="${pathToRoot}index.html" class="nav-link">
               <i class="fas fa-home"></i> Back to Index
             </a>
           </div>
@@ -1670,7 +1818,7 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
     // Initialize syntax highlighting
     document.addEventListener('DOMContentLoaded', function() {
       document.querySelectorAll('pre code').forEach((block) => {
-        hljs.highlightBlock(block);
+        hljs.highlightElement(block);
       });
       
       // Add copy buttons to code blocks
@@ -1875,152 +2023,6 @@ function generateBreadcrumbs(relativePath) {
   }
   
   return breadcrumbs;
-}
-
-/**
- * Generate navigation menu from pages
- * @param {Array} pages - List of pages
- * @param {string} parentId - Parent ID for nested menu
- * @param {string} basePath - Base path for calculating relative URLs
- * @returns {string} HTML navigation menu
- */
-function generateNavMenu(pages, parentId = '', basePath = '') {
-  if (!pages || !Array.isArray(pages) || pages.length === 0) {
-    return '';
-  }
-  
-  // Process pages to merge directories and content pages with the same name
-  const processedPages = [];
-  const nameMap = {};
-  
-  // First group pages by sanitized title to avoid duplicates
-  for (const page of pages) {
-    if (page.isAttachmentDir) continue;
-    
-    const sanitizedTitle = sanitizePathSegment(page.title);
-    
-    if (!nameMap[sanitizedTitle]) {
-      nameMap[sanitizedTitle] = {
-        dirPage: null,
-        filePage: null
-      };
-    }
-    
-    if (page.isDirectory) {
-      nameMap[sanitizedTitle].dirPage = page;
-    } else {
-      nameMap[sanitizedTitle].filePage = page;
-    }
-  }
-  
-  // Create merged pages to eliminate duplicates
-  for (const sanitizedTitle in nameMap) {
-    const { dirPage, filePage } = nameMap[sanitizedTitle];
-    
-    if (dirPage && filePage) {
-      // If both directory and file exist, merge them
-      processedPages.push({
-        ...dirPage,
-        hasFileContent: true,
-        title: dirPage.title, // Use only one title
-        path: filePage.path
-      });
-    } else if (dirPage) {
-      processedPages.push(dirPage);
-    } else if (filePage) {
-      processedPages.push(filePage);
-    }
-  }
-  
-  // Sort pages
-  processedPages.sort((a, b) => {
-    if (a.order !== undefined && b.order !== undefined) {
-      return a.order - b.order;
-    }
-    return a.title.localeCompare(b.title);
-  });
-  
-  let menu = '<ul class="nav-menu">';
-  
-  for (let i = 0; i < processedPages.length; i++) {
-    const page = processedPages[i];
-    const itemId = parentId ? `${parentId}-${i}` : `item-${i}`;
-    const childrenId = `children-${itemId}`;
-    const sanitizedTitle = sanitizePathSegment(page.title);
-    
-    menu += '<li class="nav-item">';
-    
-    if (page.isDirectory) {
-      // Directory
-      menu += `<div class="nav-item-header">`;
-      
-      if (page.children && page.children.length > 0) {
-        menu += `<span class="toggle-icon" data-target="${childrenId}">▶</span>`;
-      } else {
-        menu += `<span class="toggle-placeholder">📁</span>`;
-      }
-      
-      // Store the page path in data attribute instead of using direct href
-      const dirPath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
-      menu += `<a href="javascript:void(0);" class="nav-link" data-page-path="${dirPath}" onclick="navigateToPage(this)">${page.title}</a>`;
-      menu += `</div>`;
-      
-      if (page.children && page.children.length > 0) {
-        // Pass the full path including this directory to child pages
-        const newBasePath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
-        const childrenMenu = generateNavMenu(page.children, itemId, newBasePath);
-        menu += `<div id="${childrenId}" class="nav-children collapsed">${childrenMenu}</div>`;
-      }
-    } else {
-      // Page - store the page path in data attribute instead of using direct href
-      const pagePath = basePath ? `${basePath}/${sanitizedTitle}` : sanitizedTitle;
-      menu += `<div class="nav-item-header">
-        <span class="toggle-placeholder">📄</span>
-        <a href="javascript:void(0);" class="nav-link" data-page-path="${pagePath}" onclick="navigateToPage(this)">${page.title}</a>
-      </div>`;
-    }
-    
-    menu += '</li>';
-  }
-  
-  menu += '</ul>';
-  
-  // Add navigation script to the first call (root menu only)
-  if (!parentId) {
-    menu += `
-    <script>
-      // Navigation function that handles all menu clicks
-      function navigateToPage(linkElement) {
-        const pagePath = linkElement.getAttribute('data-page-path');
-        if (pagePath) {
-          // Get the root path (path to the site root)
-          let rootPath = '';
-          
-          // Determine the root path based on current URL
-          const currentPath = window.location.pathname;
-          
-          if (currentPath.includes('/pages/')) {
-            // We're in a page, need to navigate up to root
-            const parts = currentPath.split('/pages/')[0];
-            rootPath = parts + '/';
-          } else if (currentPath.endsWith('index.html')) {
-            // We're at the root index
-            rootPath = currentPath.replace('index.html', '');
-          } else {
-            // Fallback - assume we're at root
-            rootPath = '/';
-          }
-          
-          // Construct the full URL and navigate
-          const pageUrl = rootPath + 'pages/' + pagePath + '/index.html';
-          console.log('Navigating to: ' + pageUrl);
-          window.location.href = pageUrl;
-        }
-      }
-    </script>`;
-  }
-  
-  return menu;
 }
 
 module.exports = {
