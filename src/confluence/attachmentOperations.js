@@ -3,6 +3,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const { getMimeType } = require('../utils');
 const { getConfig } = require('./config');
+const { logger } = require('../utils');
 
 
 /**
@@ -14,18 +15,18 @@ const { getConfig } = require('./config');
  */
 async function getBlobUrl(confluenceClient, pageId, attachmentName) {
     if (!confluenceClient || !pageId || !attachmentName) {
-        console.error(`Missing required parameters for getBlobUrl. confluenceClient: ${!!confluenceClient}, pageId: ${pageId}, attachmentName: ${attachmentName}`);
+        logger.error(`Missing required parameters for getBlobUrl. confluenceClient: ${!!confluenceClient}, pageId: ${pageId}, attachmentName: ${attachmentName}`);
         return null;
     }
 
     try {
-        console.log(`Fetching blob URL for attachment: ${attachmentName} on page ${pageId}`);
+        logger.debug(`Fetching blob URL for attachment: ${attachmentName} on page ${pageId}`);
         
         // Get attachments for the page
         const response = await confluenceClient.getAttachments(pageId);
         
         if (!response || !response.results || !Array.isArray(response.results)) {
-            console.warn(`No attachments found for page ${pageId}`);
+            logger.warn(`No attachments found for page ${pageId}`);
             return null;
         }
         
@@ -33,20 +34,20 @@ async function getBlobUrl(confluenceClient, pageId, attachmentName) {
         const attachment = response.results.find(att => att.title === attachmentName);
         
         if (!attachment) {
-            console.warn(`Attachment '${attachmentName}' not found on page ${pageId}`);
+            logger.warn(`Attachment '${attachmentName}' not found on page ${pageId}`);
             return null;
         }
         
         // Check if download link exists
         if (!attachment._links || !attachment._links.download) {
-            console.warn(`No download link found for attachment: ${attachmentName}`);
+            logger.warn(`No download link found for attachment: ${attachmentName}`);
             return null;
         }
         
         // Get the base URL from the Confluence client
         const baseUrl = confluenceClient.getBaseUrl();
         if (!baseUrl) {
-            console.error('Failed to get base URL from Confluence client');
+            logger.error('Failed to get base URL from Confluence client');
             return null;
         }
         
@@ -54,10 +55,10 @@ async function getBlobUrl(confluenceClient, pageId, attachmentName) {
         const downloadPath = attachment._links.download;
         const blobUrl = baseUrl + downloadPath;
         
-        console.log(`Successfully retrieved blob URL for ${attachmentName}: ${blobUrl}`);
+        logger.debug(`Successfully retrieved blob URL for ${attachmentName}: ${blobUrl}`);
         return blobUrl;
     } catch (error) {
-        console.error(`Error getting blob URL for attachment ${attachmentName} on page ${pageId}: ${error.message}`);
+        logger.error(`Error getting blob URL for attachment ${attachmentName} on page ${pageId}: ${error.message}`);
         // Return null instead of throwing to allow fallback to attachment reference
         return null;
     }
@@ -68,7 +69,7 @@ async function getBlobUrl(confluenceClient, pageId, attachmentName) {
  */
 async function uploadAttachments(confluenceClient, pageId, pagePath, attachmentMappings) {
     try {
-        console.log(`Processing attachments for page: ${pagePath}`);
+        logger.info(`Processing attachments for page: ${pagePath}`);
         const content = await fs.readFile(pagePath, 'utf8');
         
         // Track processed files to avoid duplicates
@@ -97,16 +98,16 @@ async function uploadAttachments(confluenceClient, pageId, pagePath, attachmentM
             }
         }
         
-        console.log(`Looking for attachments in root folder: ${rootAttachmentsDir}`);
+        logger.debug(`Looking for attachments in root folder: ${rootAttachmentsDir}`);
         
         // Process each type of image reference
         await processStandardImageReferences(content, processedFiles, rootAttachmentsDir, confluenceClient, pageId, attachmentMappings);
         await processWikiStyleImageReferences(content, processedFiles, rootAttachmentsDir, confluenceClient, pageId, attachmentMappings);
         await processHtmlImageReferences(content, processedFiles, rootAttachmentsDir, confluenceClient, pageId, attachmentMappings);
         
-        console.log(`Completed processing ${processedFiles.size} attachments for page: ${pagePath}`);
+        logger.info(`Completed processing ${processedFiles.size} attachments for page: ${pagePath}`);
     } catch (error) {
-        console.error(`Error processing attachments for page ${pagePath}:`, error);
+        logger.error(`Error processing attachments for page ${pagePath}:`, error);
     }
 }
 
@@ -114,7 +115,7 @@ async function uploadAttachments(confluenceClient, pageId, pagePath, attachmentM
  * Process standard Markdown image references: ![alt](path/to/image.png)
  */
 async function processStandardImageReferences(content, processedFiles, rootAttachmentsDir, confluenceClient, pageId, attachmentMappings) {
-    console.log(`Processing standard Markdown image references`);
+    logger.debug(`Processing standard Markdown image references`);
     
     // Enhanced regex to capture standard Markdown image references
     // This regex handles additional parameters like =750x after the image path

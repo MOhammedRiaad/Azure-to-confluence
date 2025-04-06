@@ -1,9 +1,10 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { logger } = require('../utils');
 
 async function parseWiki(wikiPath, projectDir = '') {
   try {
-    console.log(`Parsing wiki at path: ${wikiPath}`);
+    logger.info(`Parsing wiki at path: ${wikiPath}`);
     const structure = {
       pages: []
     };
@@ -33,7 +34,7 @@ async function parseWiki(wikiPath, projectDir = '') {
         }
       } else if (item.endsWith('.md')) {
         // Handle Markdown file
-        console.log(`Reading Markdown file: ${fullPath}`);
+        logger.debug(`Reading Markdown file: ${fullPath}`);
         try {
           const content = await fs.readFile(fullPath, 'utf8');
           if (content) {
@@ -43,19 +44,19 @@ async function parseWiki(wikiPath, projectDir = '') {
               content: content,
               children: []
             });
-            console.log(`Successfully loaded content for: ${item}`);
+            logger.debug(`Successfully loaded content for: ${item}`);
           } else {
-            console.warn(`Empty content in file: ${item}`);
+            logger.warn(`Empty content in file: ${item}`);
           }
         } catch (readError) {
-          console.error(`Error reading file ${item}:`, readError);
+          logger.error(`Error reading file ${item}:`, readError);
         }
       }
     }
 
     return structure;
   } catch (error) {
-    console.error('Error parsing wiki structure:', error);
+    logger.error('Error parsing wiki structure:', error);
     throw error;
   }
 }
@@ -76,7 +77,7 @@ function sanitizeTitle(title) {
       decodedTitle = decodeURIComponent(title);
     } catch (e) {
       // If decoding fails, use the original title
-      console.warn(`Could not decode title "${title}": ${e.message}`);
+      logger.warn(`Could not decode title "${title}": ${e.message}`);
     }
     
     // Remove any path separators and problematic characters
@@ -90,7 +91,7 @@ function sanitizeTitle(title) {
     // Trim the title and return the readable version
     return sanitized.trim();
   } catch (error) {
-    console.error(`Error sanitizing title "${title}":`, error);
+    logger.error(`Error sanitizing title "${title}":`, error);
     // Return a fallback safe version of the title
     return title.replace(/[^\w-]/g, '_').trim();
   }

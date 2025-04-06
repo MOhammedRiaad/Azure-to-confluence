@@ -2,6 +2,7 @@ const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs-extra');
 const { validateConfig } = require('../utils/configValidator');
+const { logger } = require('../utils');
 
 dotenv.config();
 
@@ -40,7 +41,7 @@ function getWikiRootDir() {
       const fullPath = resolvePath(possibility);
       try {
         if (fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory()) {
-          console.log(`Detected wiki root directory: ${fullPath}`);
+          logger.info(`Detected wiki root directory: ${fullPath}`);
           return fullPath;
         }
       } catch (error) {
@@ -66,6 +67,7 @@ function getAttachmentsDir() {
   
   try {
     if (fs.existsSync(attachmentsInWikiRoot) && fs.statSync(attachmentsInWikiRoot).isDirectory()) {
+      logger.debug(`Found attachments directory in wiki root: ${attachmentsInWikiRoot}`);
       return attachmentsInWikiRoot;
     }
   } catch (error) {
@@ -76,12 +78,14 @@ function getAttachmentsDir() {
   const attachmentsInParent = path.join(path.dirname(wikiRoot), '.attachments');
   try {
     if (fs.existsSync(attachmentsInParent) && fs.statSync(attachmentsInParent).isDirectory()) {
+      logger.debug(`Found attachments directory in parent directory: ${attachmentsInParent}`);
       return attachmentsInParent;
     }
   } catch (error) {
     // Ignore errors checking path
   }
 
+  logger.warn('No attachments directory found. Some images may not be processed correctly.');
   // Fall back to empty string if not found
   return '';
 }
@@ -106,10 +110,10 @@ const config = {
 };
 
 function getConfig() {
-  console.log('Configuration loaded:');
-  console.log(`- Wiki root: ${config.paths.wikiRoot}`);
-  console.log(`- Project name: ${config.project.name}`);
-  console.log(`- Attachments directory: ${config.paths.attachmentsDir}`);
+  logger.info('Configuration loaded:');
+  logger.info(`- Wiki root: ${config.paths.wikiRoot}`);
+  logger.info(`- Project name: ${config.project.name}`);
+  logger.info(`- Attachments directory: ${config.paths.attachmentsDir}`);
   
   validateConfig(config);
   return config;

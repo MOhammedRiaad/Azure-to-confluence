@@ -1,10 +1,12 @@
 const path = require('path');
 const fs = require('fs-extra');
+const { Command } = require('commander');
 const ConfluenceClient = require('./utils/Confluence-API');
 
 const { runLocalTest } = require('./localTester');
 const { getConfig } = require('./confluence/config');
 const { startConfluenceProcess } = require('./confluence');
+const { logger } = require('./utils');
 
 const config = getConfig();
 
@@ -20,14 +22,14 @@ async function testAuthentication() {
   try {
     // Test authentication by attempting to get space information
     await confluenceClient.getSpaceByKey(config.confluence.spaceKey);
-    console.log('Authentication successful');
+    logger.info('Authentication successful');
     return true;
   } catch (error) {
-    console.error('Authentication failed:', error.message);
+    logger.error('Authentication failed:', error.message);
     if (error.response?.status === 401) {
-      console.error('Invalid credentials. Please check your username and API token.');
+      logger.error('Invalid credentials. Please check your username and API token.');
     } else if (error.response?.status === 404) {
-      console.error('Space not found. Please check your space key.');
+      logger.error('Space not found. Please check your space key.');
     }
     return false;
   }
@@ -36,77 +38,106 @@ async function testAuthentication() {
 // Add error handling utility
 const handleApiError = (error) => {
   if (error.response) {
-    console.error(`Confluence API error: ${error.response.status} - ${error.response.data?.message}`);
+    logger.error(`Confluence API error: ${error.response.status} - ${error.response.data?.message}`);
     switch (error.response.status) {
       case 400:
-        console.error('Bad Request: Check the request payload.');
+        logger.error('Bad Request: Check the request payload.');
         break;
       case 401:
-        console.error('Authentication failed. Please check your API token.');
+        logger.error('Authentication failed. Please check your API token.');
         break;
       case 403:
-        console.error('Forbidden: Check API token permissions.');
+        logger.error('Forbidden: Check API token permissions.');
         break;
       case 404:
-        console.error('Not Found: Verify the existence of the resource.');
+        logger.error('Not Found: Verify the existence of the resource.');
         break;
       default:
-        console.error('Unexpected error.');
+        logger.error('Unexpected error.');
     }
   }
   throw error;
 };
 
-// Helper function to get argument value
-function getArgValue(args, flag) {
-  const index = args.indexOf(flag);
-  if (index !== -1 && index + 1 < args.length) {
-    return args[index + 1];
-  }
-  return null;
-}
-
 // Main function
 async function main() {
-  try {
-    const args = process.argv.slice(2);
-    const isLocalTest = args.includes('--local') || args.includes('-l');
-    const outputPath = getArgValue(args, '--output') || getArgValue(args, '-o') || './local-output';
-    const debugMode = args.includes('--debug') || args.includes('-d');
-    
-    if (debugMode) {
-      console.log('Running in debug mode - full logging enabled');
-    }
+  const program = new Command();
 
-    // Test authentication before proceeding
-    const authSuccessful = await testAuthentication();
-    if (!authSuccessful) {
-      console.error('Authentication failed. Exiting.');
-      process.exit(1);
-    }
+  program
+    .name('wiki-migrate')
+    .description('CLI tool to migrate Azure DevOps wiki to Confluence')
+    .version('1.1.0');
 
-    if (isLocalTest) {
+  // Global options
+  program
+    .option('-d, --debug', 'Enable debug mode')
+    .option('-o, --output <path>', 'Output directory for local testing', './local-output');
+
+  // Local test command
+  program
+    .command('local')
+    .description('Run a local test of the wiki conversion')
+    .option('-w, --wiki-path <path>', 'Path to the wiki folder')
+    .action(async (options) => {
       try {
         const wikiRootFolder = path.dirname(config.paths.wikiRoot);
-        const adjustedWikiRoot = process.env.FOCUS_WIKI_PATH || 
+        const adjustedWikiRoot = options.wikiPath || 
                                path.join(config.paths.wikiRoot, 'Date-Code');
         
-        console.log(`Wiki root folder: ${wikiRootFolder}`);
-        console.log(`Adjusted wiki root: ${adjustedWikiRoot}`);
+        logger.info(`Wiki root folder: ${wikiRootFolder}`);
+        logger.info(`Adjusted wiki root: ${adjustedWikiRoot}`);
         
-        await runLocalTest(adjustedWikiRoot, outputPath, { wikiRootFolder });
+        await runLocalTest(adjustedWikiRoot, program.opts().output, { wikiRootFolder });
       } catch (error) {
-        console.error('Error running local test:', error);
+        logger.error('Error running local test:', error);
         process.exit(1);
       }
-    } else {
-      // Parse the wiki structure
-      await startConfluenceProcess(confluenceClient);
-    }
-  } catch (error) {
-    handleApiError(error);
-    process.exit(1);
-  }
+    });
+
+  // Migrate command
+  program
+    .command('migrate')
+    .description('Migrate wiki pages to Confluence')
+    .option('-s, --single <page>', 'Migrate a single page')
+    .option('-p, --parent <id>', 'Confluence parent page ID')
+    .action(async (options) => {
+      try {
+        // Enable debug mode if specified
+        if (program.opts().debug) {
+          logger.info('Running in debug mode - full logging enabled');
+          process.env.DEBUG = 'true';
+        }
+
+        // Test authentication before proceeding
+        const authSuccessful = await testAuthentication();
+        if (!authSuccessful) {
+          logger.error('Authentication failed. Exiting.');
+          process.exit(1);
+        }
+
+        // Override parent page ID if provided
+        if (options.parent) {
+          config.confluence.parentPageId = options.parent;
+          logger.debug(`Using custom parent page ID: ${options.parent}`);
+        }
+
+        // Handle single page migration
+        if (options.single) {
+          logger.info(`Migrating single page: ${options.single}`);
+          process.env.SINGLE_PAGE = options.single;
+        }
+
+        // Start the migration process
+        await startConfluenceProcess(confluenceClient);
+        logger.info('Migration completed successfully');
+      } catch (error) {
+        handleApiError(error);
+        process.exit(1);
+      }
+    });
+
+  // Parse command line arguments
+  program.parse();
 }
 
 // Run the main function
