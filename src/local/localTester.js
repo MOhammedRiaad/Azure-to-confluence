@@ -339,6 +339,63 @@ async function createIndexFile(outputPath, wikiStructure) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wiki Preview</title>
+  
+  <!-- Dynamic CSS loading script -->
+  <script>
+    // Function to dynamically load the stylesheet with the correct path
+    function loadStylesheet() {
+      // Get the current URL path
+      const currentPath = window.location.pathname;
+      
+      // Find the root path (up to local-output)
+      let rootPath = '';
+      
+      if (currentPath.includes('local-output')) {
+        // Extract the path up to and including local-output
+        const pathParts = currentPath.split('local-output');
+        rootPath = pathParts[0] + 'local-output/';
+      } else {
+        // Fallback in case we can't find local-output in the path
+        let tempPath = window.location.href;
+        tempPath = tempPath.substring(0, tempPath.lastIndexOf('/') + 1);
+        
+        // Navigate up to find the root
+        const pagesIndex = tempPath.indexOf('pages/');
+        if (pagesIndex !== -1) {
+          rootPath = tempPath.substring(0, pagesIndex);
+        } else {
+          rootPath = tempPath;
+        }
+      }
+      
+      // Create the stylesheet link element
+      const stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = rootPath + 'styles.css';
+      
+      // Log for debugging
+      console.log('Loading stylesheet from: ' + stylesheet.href);
+      
+      // Add the stylesheet to the head
+      document.head.appendChild(stylesheet);
+      
+      // Also load other required stylesheets
+      const fontAwesome = document.createElement('link');
+      fontAwesome.rel = 'stylesheet';
+      fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+      document.head.appendChild(fontAwesome);
+      
+      const highlightCSS = document.createElement('link');
+      highlightCSS.rel = 'stylesheet';
+      highlightCSS.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css';
+      document.head.appendChild(highlightCSS);
+    }
+    
+    // Load the stylesheet immediately
+    loadStylesheet();
+  </script>
+  
+  <!-- Fallback stylesheet link (the dynamic loader above will take precedence) -->
   <link rel="stylesheet" href="${pathToRoot}styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
@@ -462,6 +519,41 @@ async function createIndexFile(outputPath, wikiStructure) {
   </div>
   
   <script>
+    // Initialize syntax highlighting
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+      });
+      
+      // Add copy buttons to code blocks
+      document.querySelectorAll('pre').forEach((block) => {
+        const copyButton = document.createElement('button');
+        copyButton.className = 'copy-code-button';
+        copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+        copyButton.title = 'Copy to clipboard';
+        
+        copyButton.addEventListener('click', function() {
+          const code = block.querySelector('code').innerText;
+          navigator.clipboard.writeText(code).then(function() {
+            copyButton.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(function() {
+              copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+            }, 2000);
+          });
+        });
+        
+        block.classList.add('code-block-wrapper');
+        block.prepend(copyButton);
+      });
+      
+      // Add image zoom functionality
+      document.querySelectorAll('.page-body img').forEach((img) => {
+        img.addEventListener('click', function() {
+          this.classList.toggle('zoomed');
+        });
+      });
+    });
+    
     // Toggle sidebar on mobile
     document.getElementById('menu-toggle').addEventListener('click', function() {
       document.getElementById('sidebar').classList.toggle('active');
@@ -470,18 +562,21 @@ async function createIndexFile(outputPath, wikiStructure) {
     // Toggle dark/light theme
     document.getElementById('theme-toggle').addEventListener('click', function() {
       document.body.classList.toggle('dark-theme');
-      const icon = this.querySelector('i');
-      if (icon.classList.contains('fa-moon')) {
-        icon.classList.remove('fa-moon');
-        icon.classList.add('fa-sun');
+      
+      // Update highlight.js theme
+      const hlTheme = document.querySelector('link[href*="highlight.js"]');
+      if (document.body.classList.contains('dark-theme')) {
+        hlTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css';
+        this.querySelector('i').classList.remove('fa-moon');
+        this.querySelector('i').classList.add('fa-sun');
       } else {
-        icon.classList.remove('fa-sun');
-        icon.classList.add('fa-moon');
+        hlTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css';
+        this.querySelector('i').classList.remove('fa-sun');
+        this.querySelector('i').classList.add('fa-moon');
       }
       
       // Save preference
-      const isDarkTheme = document.body.classList.contains('dark-theme');
-      localStorage.setItem('dark-theme', isDarkTheme);
+      localStorage.setItem('dark-theme', document.body.classList.contains('dark-theme'));
     });
     
     // Toggle navigation items
@@ -498,6 +593,25 @@ async function createIndexFile(outputPath, wikiStructure) {
           this.textContent = '▶';
         }
       });
+    });
+    
+    // Expand page view (hide sidebar)
+    document.getElementById('expand-page').addEventListener('click', function() {
+      document.body.classList.toggle('expanded-view');
+      
+      const icon = this.querySelector('i');
+      if (icon.classList.contains('fa-expand')) {
+        icon.classList.remove('fa-expand');
+        icon.classList.add('fa-compress');
+      } else {
+        icon.classList.remove('fa-compress');
+        icon.classList.add('fa-expand');
+      }
+    });
+    
+    // Print page
+    document.getElementById('print-page').addEventListener('click', function() {
+      window.print();
     });
     
     // Search functionality
@@ -556,6 +670,11 @@ async function createIndexFile(outputPath, wikiStructure) {
       const isDarkTheme = localStorage.getItem('dark-theme') === 'true';
       if (isDarkTheme) {
         document.body.classList.add('dark-theme');
+        
+        // Update highlight.js theme
+        const hlTheme = document.querySelector('link[href*="highlight.js"]');
+        hlTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css';
+        
         const icon = document.querySelector('.theme-toggle i');
         icon.classList.remove('fa-moon');
         icon.classList.add('fa-sun');
@@ -1739,6 +1858,63 @@ async function createHtmlPage(title, html, outputPath, relativePath, wikiStructu
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} - Wiki Preview</title>
+  
+  <!-- Dynamic CSS loading script -->
+  <script>
+    // Function to dynamically load the stylesheet with the correct path
+    function loadStylesheet() {
+      // Get the current URL path
+      const currentPath = window.location.pathname;
+      
+      // Find the root path (up to local-output)
+      let rootPath = '';
+      
+      if (currentPath.includes('local-output')) {
+        // Extract the path up to and including local-output
+        const pathParts = currentPath.split('local-output');
+        rootPath = pathParts[0] + 'local-output/';
+      } else {
+        // Fallback in case we can't find local-output in the path
+        let tempPath = window.location.href;
+        tempPath = tempPath.substring(0, tempPath.lastIndexOf('/') + 1);
+        
+        // Navigate up to find the root
+        const pagesIndex = tempPath.indexOf('pages/');
+        if (pagesIndex !== -1) {
+          rootPath = tempPath.substring(0, pagesIndex);
+        } else {
+          rootPath = tempPath;
+        }
+      }
+      
+      // Create the stylesheet link element
+      const stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = rootPath + 'styles.css';
+      
+      // Log for debugging
+      console.log('Loading stylesheet from: ' + stylesheet.href);
+      
+      // Add the stylesheet to the head
+      document.head.appendChild(stylesheet);
+      
+      // Also load other required stylesheets
+      const fontAwesome = document.createElement('link');
+      fontAwesome.rel = 'stylesheet';
+      fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+      document.head.appendChild(fontAwesome);
+      
+      const highlightCSS = document.createElement('link');
+      highlightCSS.rel = 'stylesheet';
+      highlightCSS.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css';
+      document.head.appendChild(highlightCSS);
+    }
+    
+    // Load the stylesheet immediately
+    loadStylesheet();
+  </script>
+  
+  <!-- Fallback stylesheet link (the dynamic loader above will take precedence) -->
   <link rel="stylesheet" href="${pathToRoot}styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
