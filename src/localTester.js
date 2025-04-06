@@ -1,7 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const marked = require('marked');
-const { parseWiki } = require('./wikiParser');
+const { parseWiki } = require('./confluence/wikiParser');
 const { logger } = require('./utils');
 
 /**

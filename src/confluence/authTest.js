@@ -1,4 +1,4 @@
-const  Confluence = require('./utils/Confluence-API.js');
+const  Confluence = require('../utils/Confluence-API.js');
 
 async function testAuthentication(config) {
   try {

@@ -1,7 +1,7 @@
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs-extra');
-const { validateConfig } = require('./utils/configValidator');
+const { validateConfig } = require('../utils/configValidator');
 
 dotenv.config();
 

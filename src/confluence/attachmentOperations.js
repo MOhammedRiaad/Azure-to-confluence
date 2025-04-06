@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs-extra');
 const path = require('path');
-const { getMimeType } = require('./utils');
+const { getMimeType } = require('../utils');
 const { getConfig } = require('./config');
 
 
