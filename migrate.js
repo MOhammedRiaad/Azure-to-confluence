@@ -4,6 +4,7 @@ const readline = require('readline');
 const fs = require('fs-extra');
 const path = require('path');
 const dotenv = require('dotenv');
+const { logger } = require('./src/utils');
 
 // Load environment variables
 dotenv.config();
@@ -25,12 +26,12 @@ function prompt(question) {
 
 // Helper function to run a command
 function runCommand(command, options = {}) {
-  console.log(`\nExecuting: ${command}\n`);
+  logger.info(`Executing: ${command}`);
   try {
     execSync(command, { stdio: 'inherit', ...options });
     return true;
   } catch (error) {
-    console.error(`\nCommand failed with error: ${error.message}`);
+    logger.error(`Command failed with error: ${error.message}`);
     return false;
   }
 }
@@ -106,7 +107,7 @@ async function runFullMigration() {
     return;
   }
   
-  runCommand('node src/index.js');
+  runCommand('node src/index.js migrate');
 }
 
 // Run local test
@@ -115,8 +116,8 @@ async function runLocalTest() {
   
   const outputPath = await prompt('Enter output directory (default: ./local-output): ');
   const command = outputPath 
-    ? `node src/index.js --local --output ${outputPath}` 
-    : 'node src/index.js --local';
+    ? `node src/index.js local -o ${outputPath}` 
+    : 'node src/index.js local';
     
   runCommand(command);
 }
@@ -131,7 +132,7 @@ async function migrateSinglePage() {
     return;
   }
   
-  runCommand(`node src/index.js --singlePage "${pageName}"`);
+  runCommand(`node src/index.js migrate -s "${pageName}"`);
 }
 
 // Run in debug mode
@@ -147,9 +148,9 @@ async function runDebugMode() {
       return;
     }
     
-    runCommand(`node src/index.js --debug --singlePage "${pageName}"`);
+    runCommand(`node src/index.js migrate -d -s "${pageName}"`);
   } else {
-    runCommand('node src/index.js --debug');
+    runCommand('node src/index.js migrate -d');
   }
 }
 
@@ -163,11 +164,12 @@ async function updateExistingPage() {
     return;
   }
   
-  runCommand(`node src/index.js --debug --page ${pageId}`);
+  // For now, we'll use the parent page ID option to update a specific page
+  runCommand(`node src/index.js migrate -d -p ${pageId}`);
 }
 
 // Start the main menu
 showMainMenu().catch(error => {
-  console.error('An error occurred:', error);
+  logger.error('An error occurred:', error);
   rl.close();
 }); 
