@@ -159,7 +159,7 @@ function filterOutProjectDir(pages) {
     console.log('Processing attachments...');
     
     // The exact path where the .attachments folder is located
-    const attachmentsPath = path.join(path.dirname(wikiPath), '.attachments');
+    const attachmentsPath = config.paths.attachmentsDir || path.join(path.dirname(wikiPath), '.attachments');
     console.log(`Checking for .attachments folder at: ${attachmentsPath}`);
     
     try {
