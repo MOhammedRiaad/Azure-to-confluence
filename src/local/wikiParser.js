@@ -1,331 +1,307 @@
+/**
+ * Wiki parser for local testing
+ */
+
 const fs = require('fs-extra');
 const path = require('path');
-const { glob } = require('glob');
+const { logger } = require('../utils');
+const { countPages, countAttachments, countFolders } = require('./utils/statsUtils');
+const { sanitizePathSegment, decodeUrlEncoded } = require('./utils/pathUtils');
 
 /**
- * Safe URI component decoder that handles malformed URIs
- * @param {string} uri - URI to decode
- * @returns {string} - Decoded URI
+ * Check if a directory or file should be excluded from the wiki structure
+ * @param {string} itemName - Name of the directory or file
+ * @param {string} itemPath - Full path to the directory or file
+ * @returns {boolean} - True if the directory should be excluded
  */
-function safeDecodeURIComponent(uri) {
+function shouldExcludeItem(itemName, itemPath) {
+  // Exclude hidden files and directories
+  if (itemName.startsWith('.')) return true;
+  
+  // Exclude common directories that shouldn't be part of the wiki
+  const excludedDirs = [
+    'node_modules',
+    'dist',
+    'build',
+    '.git',
+    'coverage',
+    'logs',
+    'tmp',
+    'temp',
+    '.github',
+    '.vscode',
+    '.vs',
+    'bin',
+    'obj',
+    'azure-to-confluence'
+  ];
+  
+  // Check if the current item name is in the exclusion list
+  if (excludedDirs.includes(itemName)) return true;
+  
+  // Check if the path contains any of the excluded directories
+  for (const dir of excludedDirs) {
+    if (itemPath.includes(`/${dir}/`) || itemPath.includes(`\\${dir}\\`)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Parse the wiki structure for local testing
+ * @param {string} wikiRootPath - Path to the Azure DevOps wiki root
+ * @returns {Promise<Object>} - Wiki structure object
+ */
+async function parseWiki(wikiRootPath) {
+  logger.info(`Parsing wiki at ${wikiRootPath}`);
+  
   try {
-    return decodeURIComponent(uri);
+    // Check if the wiki root exists
+    if (!(await fs.pathExists(wikiRootPath))) {
+      throw new Error(`Wiki root path does not exist: ${wikiRootPath}`);
+    }
+    
+    // Parse the wiki structure
+    const rootDir = path.dirname(wikiRootPath);
+    const wikiStructure = {
+      root: rootDir,
+      rootPage: wikiRootPath,
+      pages: [],
+      attachments: {
+        path: path.join(rootDir, '.attachments'),
+        count: 0
+      }
+    };
+    
+    // Check if .order file exists to determine page ordering
+    const orderPath = path.join(rootDir, '.order');
+    let pageOrder = [];
+    
+    try {
+      if (await fs.pathExists(orderPath)) {
+        const orderContent = await fs.readFile(orderPath, 'utf8');
+        pageOrder = orderContent.split('\n').filter(Boolean);
+        logger.info(`Found .order file with ${pageOrder.length} entries`);
+      }
+    } catch (error) {
+      logger.warn(`Error reading .order file: ${error.message}`);
+    }
+    
+    // Get and process contents of the wiki root
+    const rootContents = await fs.readdir(rootDir);
+    
+    // Sort contents according to .order file if available
+    const sortedContents = [...rootContents].sort((a, b) => {
+      const aIndex = pageOrder.indexOf(a);
+      const bIndex = pageOrder.indexOf(b);
+      
+      if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    });
+    
+    // Process each item in the wiki root
+    for (const item of sortedContents) {
+      try {
+        const itemPath = path.join(rootDir, item);
+        
+        // Skip items that should be excluded (except .attachments)
+        if (item === '.attachments') {
+          wikiStructure.attachments.path = itemPath;
+          wikiStructure.attachments.count = await countAttachments(itemPath);
+          logger.info(`Found .attachments directory with ${wikiStructure.attachments.count} files`);
+          continue;
+        }
+        
+        if (shouldExcludeItem(item, itemPath)) {
+          continue;
+        }
+        
+        const stats = await fs.stat(itemPath);
+        
+        // Process item based on whether it's a directory or file
+        if (stats.isDirectory()) {
+          // It's a directory - process it recursively
+          const directory = await processDirectory(itemPath, item);
+          wikiStructure.pages.push(directory);
+        } else if (stats.isFile() && item.endsWith('.md')) {
+          // It's a markdown file - process it as a page
+          const page = processMarkdownFile(itemPath, item);
+          wikiStructure.pages.push(page);
+        }
+      } catch (error) {
+        logger.warn(`Error processing wiki item ${item}: ${error.message}`);
+      }
+    }
+    
+    // Add statistics
+    wikiStructure.stats = {
+      pageCount: countPages(wikiStructure.pages),
+      folderCount: countFolders(wikiStructure.pages),
+      attachmentCount: wikiStructure.attachments.count
+    };
+    
+    // Process the wiki structure to set file paths consistently
+    normalizeWikiStructure(wikiStructure.pages);
+    
+    logger.info(`Wiki parsing complete - found ${wikiStructure.stats.pageCount} pages, ${wikiStructure.stats.folderCount} folders, and ${wikiStructure.stats.attachmentCount} attachments`);
+    
+    return wikiStructure;
   } catch (error) {
-    console.warn(`Warning: Failed to decode URI component "${uri}"`);
-    // Handle common encodings manually
-    let result = uri;
-    // Replace common encodings
-    result = result.replace(/%20/g, ' ')
-      .replace(/%2D/g, '-')
-      .replace(/%2F/g, '/')
-      .replace(/%3A/g, ':');
-    return result;
+    logger.error(`Error parsing wiki: ${error.message}`);
+    throw error;
   }
 }
 
 /**
- * Parse Azure DevOps wiki structure
- * @param {string} wikiRoot - Path to wiki root
- * @returns {Promise<Object>} - Wiki structure
+ * Normalize the wiki structure to ensure consistent naming for files and directories
+ * @param {Array} pages - Array of page objects
  */
-async function parseWiki(wikiRoot) {
-  console.log(`Parsing wiki at path: ${wikiRoot}`);
+function normalizeWikiStructure(pages) {
+  if (!pages || !Array.isArray(pages)) return;
   
-  const rootPages = await parseDirectory(wikiRoot);
-  
-  return {
-    pages: rootPages.filter(page => page.title !== '.attachments')
-  };
+  for (const page of pages) {
+    // Make sure every page has originalTitle for filesystem operations
+    if (!page.originalTitle) {
+      page.originalTitle = page.title;
+    }
+    
+    // Make sure each directory has a sanitized filesystem path
+    page.filePath = page.originalTitle;
+    
+    // Process children recursively
+    if (page.isDirectory && page.children && Array.isArray(page.children)) {
+      normalizeWikiStructure(page.children);
+    }
+  }
 }
 
 /**
- * Parses a directory in the wiki structure
- * @param {string} dirPath - Path to the directory to parse
- * @param {number} level - Level of nesting
- * @returns {Object} Pages in this directory and its subdirectories
+ * Process a directory in the wiki
+ * @param {string} dirPath - Path to the directory
+ * @param {string} dirName - Name of the directory
+ * @returns {Promise<Object>} - Directory object
  */
-async function parseDirectory(dirPath, level = 0) {
-  const indent = '  '.repeat(level);
-  console.log(`${indent}Parsing directory: ${dirPath}`);
+async function processDirectory(dirPath, dirName) {
+  logger.debug(`Processing directory: ${dirPath}`);
+  
+  // Decode URL-encoded characters in the directory name
+  const decodedDirName = decodeUrlEncoded(dirName);
+  
+  // Check if this is an attachments directory
+  const isAttachmentDir = dirName === '.attachments' || dirPath.includes('.attachments');
+  
+  const directory = {
+    title: decodedDirName,
+    originalTitle: dirName, // Keep the original title for path construction
+    path: dirPath,
+    isDirectory: true,
+    isAttachmentDir,
+    children: []
+  };
+  
+  // If this is an attachments directory, we don't need to process further
+  if (isAttachmentDir) {
+    return directory;
+  }
+  
+  // Check for index.md in the directory
+  const indexPath = path.join(dirPath, 'index.md');
+  if (await fs.pathExists(indexPath)) {
+    try {
+      const indexContent = await fs.readFile(indexPath, 'utf8');
+      directory.indexContent = indexContent;
+    } catch (error) {
+      logger.warn(`Error reading index.md for directory ${dirName}: ${error.message}`);
+    }
+  }
+  
+  // Check if .order file exists for ordering pages
+  const orderPath = path.join(dirPath, '.order');
+  let pageOrder = [];
   
   try {
-    const pages = [];
-    const basePath = path.basename(dirPath);
-    
-    // Skip special directories and files that aren't part of the wiki content
-    if (basePath.startsWith('.') && basePath !== '.attachments') {
-      console.log(`${indent}Skipping directory: ${basePath} (hidden)`);
-      return pages;
+    if (await fs.pathExists(orderPath)) {
+      const orderContent = await fs.readFile(orderPath, 'utf8');
+      pageOrder = orderContent.split('\n').filter(Boolean);
     }
+  } catch (error) {
+    logger.warn(`Error reading .order file in ${dirName}: ${error.message}`);
+  }
+  
+  // Get directory contents
+  const contents = await fs.readdir(dirPath);
+  
+  // Sort contents according to .order file if available
+  const sortedContents = [...contents].sort((a, b) => {
+    const aIndex = pageOrder.indexOf(a);
+    const bIndex = pageOrder.indexOf(b);
     
-    // Always include .attachments directory to properly handle images
-    if (basePath === '.attachments') {
-      return [{
-        title: '.attachments',
-        isDirectory: true,
-        isAttachmentDir: true,
-        path: dirPath,
-        children: [],
-      }];
-    }
-    
-    const items = await fs.readdir(dirPath);
-    
-    // First check for .order file
-    let orderFile = null;
-    let orderItems = [];
-    
-    for (const item of items) {
-      if (item.toLowerCase() === '.order') {
-        orderFile = path.join(dirPath, item);
-        try {
-          const content = await fs.readFile(orderFile, 'utf8');
-          orderItems = content.split('\n')
-            .filter(line => line.trim().length > 0)
-            .map(line => {
-              try {
-                return decodeURIComponent(line.trim());
-              } catch (e) {
-                console.log(`Warning: Failed to decode URI component "${line.trim()}"`);
-                return line.trim();
-              }
-            });
-          
-          console.log(`${indent}Order file found in ${dirPath} with entries: ${orderItems.join(', ')}`);
-        } catch (error) {
-          console.error(`${indent}Error reading order file: ${error.message}`);
-        }
-        break;
-      }
-    }
-    
-    // Create a map of ordered items for quick lookup - with proper title normalization
-    const orderMap = new Map();
-    
-    // Function to normalize titles for comparison
-    const normalizeTitle = (title) => {
-      return title.replace(/[^\w\s-]/g, '-').replace(/\s+/g, '-');
-    };
-    
-    // Create mapping of raw items in .order file to their positions
-    orderItems.forEach((item, index) => {
-      // We need to normalize the title for comparison
-      const normalizedTitle = normalizeTitle(item);
-      orderMap.set(normalizedTitle, index);
-    });
-    
-    // Process all files and directories
-    for (const item of items) {
-      if (item.toLowerCase() === '.order') continue;
+    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  });
+  
+  // Process each item in the directory
+  for (const item of sortedContents) {
+    try {
+      // Skip index.md as it's already processed
+      if (item === 'index.md') continue;
       
       const itemPath = path.join(dirPath, item);
-      const stats = await fs.stat(itemPath);
       
-      // Handle attachments directory
-      if (stats.isDirectory() && item === '.attachments') {
-        pages.push({
-          title: item,
-          isDirectory: true,
-          isAttachmentDir: true,
-          path: itemPath,
-          children: [],
-        });
+      // Skip items that should be excluded
+      if (shouldExcludeItem(item, itemPath)) {
         continue;
       }
       
-      // Process markdown files
-      if (stats.isFile() && item.toLowerCase().endsWith('.md')) {
-        // Get the title from filename
-        const title = path.basename(item, '.md');
-        // Convert URL encoded characters
-        let decodedTitle;
-        try {
-          decodedTitle = decodeURIComponent(title);
-        } catch (e) {
-          console.log(`${indent}Warning: Failed to decode URI component "${title}"`);
-          decodedTitle = title;
-        }
-        
-        // Find the order in the .order file, or default to high number
-        // Normalize the title for comparison with order file entries
-        const normalizedTitle = normalizeTitle(decodedTitle);
-        const order = orderMap.has(normalizedTitle) ? orderMap.get(normalizedTitle) : 999;
-        
-        // Add to pages
-        pages.push({
-          title: decodedTitle,
-          isDirectory: false,
-          path: itemPath,
-          order: order,
-          originalFilename: item
-        });
-      }
+      const stats = await fs.stat(itemPath);
       
-      // Process subdirectories
-      if (stats.isDirectory() && !item.startsWith('.') && item !== '.attachments') {
-        // Normalize the directory name for comparison with order file
-        const dirTitle = path.basename(item);
-        let decodedDirTitle;
-        try {
-          decodedDirTitle = decodeURIComponent(dirTitle);
-        } catch (e) {
-          console.log(`${indent}Warning: Failed to decode URI component "${dirTitle}"`);
-          decodedDirTitle = dirTitle;
-        }
-        
-        // Check if subdirectory has markdown files or further subdirectories
-        // before recursively parsing
-        const subDirItems = await fs.readdir(itemPath);
-        const hasMarkdownOrDirs = subDirItems.some(subItem => {
-          const subItemPath = path.join(itemPath, subItem);
-          return (
-            subItem.toLowerCase().endsWith('.md') || 
-            (fs.existsSync(subItemPath) && fs.statSync(subItemPath).isDirectory() && !subItem.startsWith('.'))
-          );
-        });
-        
-        // Only parse subdirectory if it contains markdown files or directories
-        if (hasMarkdownOrDirs) {
-          const subPages = await parseDirectory(itemPath, level + 1);
-          
-          // If we have child pages, add directory as a page
-          if (subPages.length > 0) {
-            // Find order in .order file, or default to high number
-            const normalizedDirTitle = normalizeTitle(decodedDirTitle);
-            const order = orderMap.has(normalizedDirTitle) ? orderMap.get(normalizedDirTitle) : 999;
-            
-            // Check for index file
-            const indexFile = subDirItems.find(f => 
-              f.toLowerCase() === 'index.md' || 
-              f.toLowerCase() === `${item.toLowerCase()}.md`
-            );
-            
-            // If index file exists, parse it and use as the parent
-            let indexContent = null;
-            if (indexFile) {
-              const indexPath = path.join(itemPath, indexFile);
-              try {
-                indexContent = await fs.readFile(indexPath, 'utf8');
-              } catch (error) {
-                console.error(`${indent}Error reading index file: ${error.message}`);
-              }
-            }
-            
-            // Add directory as page with children
-            pages.push({
-              title: decodedDirTitle,
-              isDirectory: true,
-              path: itemPath,
-              order: order,
-              indexContent: indexContent,
-              children: subPages,
-              originalFilename: item
-            });
-            
-            // If there's an explicit markdown file with same name as dir
-            // add it also as a separate page at same level
-            const explicitFile = subDirItems.find(f => 
-              f.toLowerCase() === `${item.toLowerCase()}.md`
-            );
-            
-            if (explicitFile) {
-              const explicitPath = path.join(itemPath, explicitFile);
-              pages.push({
-                title: decodedDirTitle,
-                isDirectory: false,
-                path: explicitPath,
-                order: order, // Use same order as directory
-                originalFilename: explicitFile
-              });
-            }
-          }
-        }
+      if (stats.isDirectory()) {
+        // Process subdirectory recursively
+        const subdirectory = await processDirectory(itemPath, item);
+        directory.children.push(subdirectory);
+      } else if (stats.isFile() && item.endsWith('.md')) {
+        // Process markdown file
+        const page = processMarkdownFile(itemPath, item);
+        directory.children.push(page);
       }
+    } catch (error) {
+      logger.warn(`Error processing item ${item} in directory ${dirName}: ${error.message}`);
     }
-    
-    // Sort pages by order specified in .order file, or alphabetically if no order
-    pages.sort((a, b) => {
-      if (a.order !== undefined && b.order !== undefined) {
-        return a.order - b.order;
-      }
-      return a.title.localeCompare(b.title);
-    });
-    
-    // Log ordered pages
-    if (pages.length > 0 && level === 0) {
-      console.log(`${indent}Ordered pages in ${dirPath}:`);
-      pages.forEach(page => {
-        const filePart = page.isDirectory ? page.path.split(path.sep).pop() : page.originalFilename;
-        console.log(`${indent}- ${page.title} (${filePart}, order: ${page.order})`);
-      });
-    }
-    
-    return pages;
-  } catch (error) {
-    console.error(`${indent}Error parsing directory: ${error.message}`);
-    return [];
   }
+  
+  return directory;
 }
 
 /**
- * Find attachment directories and add them to the structure
- * @param {Object} pages - Pages structure
- * @param {string} basePath - Base path for finding attachments
- * @returns {Object} Updated pages structure with attachments
+ * Process a markdown file
+ * @param {string} filePath - Path to the markdown file
+ * @param {string} fileName - Name of the file
+ * @returns {Object} - Page object
  */
-async function findAttachmentDirectories(pages, basePath) {
-  // Process all pages recursively
-  const processPages = async (pageList, currentPath = '') => {
-    for (let i = 0; i < pageList.length; i++) {
-      const page = pageList[i];
-      
-      // For each page directory, check if .attachments exists
-      if (page.isDirectory && !page.isAttachmentDir) {
-        const attachmentPath = path.join(page.path, '.attachments');
-        
-        if (await fs.pathExists(attachmentPath)) {
-          // Add attachments directory as a child of this page
-          if (!page.children) {
-            page.children = [];
-          }
-          
-          page.children.push({
-            title: '.attachments',
-            isDirectory: true,
-            isAttachmentDir: true,
-            path: attachmentPath,
-            children: []
-          });
-        }
-        
-        // Process children recursively
-        if (page.children) {
-          await processPages(page.children, path.join(currentPath, page.title));
-        }
-      }
-    }
+function processMarkdownFile(filePath, fileName) {
+  logger.debug(`Processing markdown file: ${filePath}`);
+  
+  // Remove .md extension from filename
+  const title = fileName.endsWith('.md') ? fileName.slice(0, -3) : fileName;
+  
+  // Decode URL-encoded characters in the title
+  const decodedTitle = decodeUrlEncoded(title);
+  
+  return {
+    title: decodedTitle,
+    originalTitle: title, // Keep the original title for path construction
+    path: filePath,
+    isDirectory: false
   };
-  
-  // Also check for root level .attachments directory
-  const rootAttachmentsPath = path.join(basePath, '.attachments');
-  if (await fs.pathExists(rootAttachmentsPath)) {
-    pages.push({
-      title: '.attachments',
-      isDirectory: true,
-      isAttachmentDir: true,
-      path: rootAttachmentsPath,
-      children: []
-    });
-  }
-  
-  // Process all pages to find attachment directories
-  await processPages(pages);
-  
-  return pages;
 }
 
 module.exports = {
   parseWiki,
-  parseDirectory,
-  findAttachmentDirectories
+  shouldExcludeItem
 }; 

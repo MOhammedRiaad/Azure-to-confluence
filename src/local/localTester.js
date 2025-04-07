@@ -731,11 +731,11 @@ body.dark-theme {
   box-sizing: border-box;
 }
 
-body {
+    body {
   font-family: var(--font-sans);
   color: var(--text-color);
   background-color: var(--bg-color);
-  line-height: 1.6;
+      line-height: 1.6;
   transition: background-color var(--transition-speed), color var(--transition-speed);
 }
 
@@ -769,7 +769,7 @@ button {
 
 .header-content {
   max-width: var(--content-max-width);
-  margin: 0 auto;
+      margin: 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -794,7 +794,7 @@ button {
 }
 
 .logo a {
-  display: flex;
+      display: flex;
   align-items: center;
   gap: 1rem;
   color: var(--text-color);
@@ -821,7 +821,7 @@ button {
 
 .main-container {
   display: flex;
-  flex: 1;
+      flex: 1;
   margin-top: var(--header-height);
 }
 
@@ -833,12 +833,12 @@ button {
   top: var(--header-height);
   bottom: 0;
   left: 0;
-  overflow-y: auto;
+      overflow-y: auto;
   transition: transform var(--transition-speed), background-color var(--transition-speed);
   z-index: 99;
-}
+    }
 
-.content {
+    .content {
   flex: 1;
   padding: 2rem;
   margin-left: var(--sidebar-width);
@@ -892,38 +892,38 @@ button {
   padding: 0;
 }
 
-.nav-item {
+    .nav-item {
   margin: 0.25rem 0;
-}
+    }
 
-.nav-item-header {
-  display: flex;
-  align-items: center;
+    .nav-item-header {
+      display: flex;
+      align-items: center;
   padding: 0.75rem 1.5rem;
   border-radius: var(--radius);
   transition: background-color var(--transition-speed);
-}
+    }
 
 .nav-item-header:hover {
   background-color: var(--bg-dark);
 }
 
-.toggle-icon, .toggle-placeholder {
+    .toggle-icon, .toggle-placeholder {
   width: 20px;
   margin-right: 0.5rem;
-  cursor: pointer;
+      cursor: pointer;
   transition: transform var(--transition-speed);
-}
+    }
 
-.nav-children {
+    .nav-children {
   margin-left: 1.5rem;
   padding-left: 0.5rem;
   border-left: 1px solid var(--border-color);
-}
+    }
 
-.nav-children.collapsed {
-  display: none;
-}
+    .nav-children.collapsed {
+      display: none;
+    }
 
 /* Content */
 .welcome-container {
@@ -956,8 +956,8 @@ button {
 
 /* Stats panel */
 .stats-panel {
-  display: flex;
-  justify-content: space-between;
+      display: flex;
+      justify-content: space-between;
   gap: 1rem;
   margin: 2rem 0;
 }
@@ -1018,7 +1018,7 @@ button {
 }
 
 .link-card a {
-  display: flex;
+      display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
@@ -1679,127 +1679,127 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
     console.log(`Path depth details: normalizedParentPath=${normalizedParentPath}, pathDepth=${pathDepth}, pathToRoot=${pathToRoot}`);
    
     try {
-      // First, process simple markdown image references directly
-      // This handles the format: ![alt text](path/to/image.png)
-      processedMarkdown = processedMarkdown.replace(
-        /!\[([^\]]*)\]\(([^)]+)(?:\s*=\s*([0-9x]+))?\)/g,
-        (match, altText, imagePath, dimensions) => {
-          if (!imagePath) return match;
-          
-          // Check if this is an attachment reference
-          const isAttachment = 
-            imagePath.includes('.attachments/') || 
-            imagePath.includes('/attachments/') || 
-            (!imagePath.startsWith('http') && !imagePath.startsWith('data:'));
-          
-          if (!isAttachment) return match; // Not an attachment, keep as is
-          
+    // First, process simple markdown image references directly
+    // This handles the format: ![alt text](path/to/image.png)
+    processedMarkdown = processedMarkdown.replace(
+      /!\[([^\]]*)\]\(([^)]+)(?:\s*=\s*([0-9x]+))?\)/g,
+      (match, altText, imagePath, dimensions) => {
+        if (!imagePath) return match;
+        
+        // Check if this is an attachment reference
+        const isAttachment = 
+          imagePath.includes('.attachments/') || 
+          imagePath.includes('/attachments/') || 
+          (!imagePath.startsWith('http') && !imagePath.startsWith('data:'));
+        
+        if (!isAttachment) return match; // Not an attachment, keep as is
+        
           try {
-            // Extract filename from path
-            const imageFileName = imagePath.split('/').pop().split('\\').pop();
-            
-            // Clean any URL encoding in the filename
-            const cleanFileName = decodeURIComponent(imageFileName);
-            
-            // Create the path with URL encoding for spaces and special characters
-            const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
-            
-            const dimensionsAttr = dimensions ? ` =${dimensions}` : '';
-            return `<img src="${newImagePath}" alt="${altText || cleanFileName}" />`;
+        // Extract filename from path
+        const imageFileName = imagePath.split('/').pop().split('\\').pop();
+        
+        // Clean any URL encoding in the filename
+        const cleanFileName = decodeURIComponent(imageFileName);
+        
+        // Create the path with URL encoding for spaces and special characters
+        const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
+        
+        const dimensionsAttr = dimensions ? ` =${dimensions}` : '';
+        return `<img src="${newImagePath}" alt="${altText || cleanFileName}" />`;
           } catch (err) {
             logger.warn(`Warning: Error processing image reference (${imagePath}): ${err.message}`);
             return match; // Return original if error
           }
-        }
-      );
+      }
+    );
     } catch (error) {
       logger.warn(`Warning: Error processing markdown image references: ${error.message}`);
     }
     
     try {
-      // Process wiki-style image links: ![[image.png]]
-      processedMarkdown = processedMarkdown.replace(
-        /!\[\[([^|\]]+)(?:\|[^\]]*)?]]/g,
-        (match, imagePath) => {
-          if (!imagePath) return match;
-          
+    // Process wiki-style image links: ![[image.png]]
+    processedMarkdown = processedMarkdown.replace(
+      /!\[\[([^|\]]+)(?:\|[^\]]*)?]]/g,
+      (match, imagePath) => {
+        if (!imagePath) return match;
+        
           try {
-            // Extract filename from path
-            const imageFileName = imagePath.split('/').pop().split('\\').pop();
-            
-            // Clean any URL encoding in the filename
-            const cleanFileName = decodeURIComponent(imageFileName);
-            
-            // Create the path with URL encoding for spaces and special characters
-            const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
-            
-            return `<img src="${newImagePath}" alt="${cleanFileName}" />`;
+        // Extract filename from path
+        const imageFileName = imagePath.split('/').pop().split('\\').pop();
+        
+        // Clean any URL encoding in the filename
+        const cleanFileName = decodeURIComponent(imageFileName);
+        
+        // Create the path with URL encoding for spaces and special characters
+        const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
+        
+        return `<img src="${newImagePath}" alt="${cleanFileName}" />`;
           } catch (err) {
             logger.warn(`Warning: Error processing wiki-style image (${imagePath}): ${err.message}`);
             return match; // Return original if error
           }
-        }
-      );
+      }
+    );
     } catch (error) {
       logger.warn(`Warning: Error processing wiki-style image links: ${error.message}`);
     }
     
     try {
-      // Process HTML img tags
-      processedMarkdown = processedMarkdown.replace(
-        /<img[^>]*src=["']([^"']*)["'][^>]*>/g,
-        (match, imagePath) => {
-          if (!imagePath) return match;
-          
-          // Check if this is an attachment reference
-          const isAttachment = 
-            imagePath.includes('.attachments/') || 
-            imagePath.includes('/attachments/') || 
-            (!imagePath.startsWith('http') && !imagePath.startsWith('data:'));
-          
-          if (!isAttachment) return match; // Not an attachment, keep as is
-          
+    // Process HTML img tags
+    processedMarkdown = processedMarkdown.replace(
+      /<img[^>]*src=["']([^"']*)["'][^>]*>/g,
+      (match, imagePath) => {
+        if (!imagePath) return match;
+        
+        // Check if this is an attachment reference
+        const isAttachment = 
+          imagePath.includes('.attachments/') || 
+          imagePath.includes('/attachments/') || 
+          (!imagePath.startsWith('http') && !imagePath.startsWith('data:'));
+        
+        if (!isAttachment) return match; // Not an attachment, keep as is
+        
           try {
-            // Extract filename from path
-            const imageFileName = imagePath.split('/').pop().split('\\').pop();
-            
-            // Clean any URL encoding in the filename
-            const cleanFileName = decodeURIComponent(imageFileName);
-            
-            // Extract alt text from the original tag if it exists
-            const altMatch = match.match(/alt=["']([^"']*)["']/);
-            const altText = altMatch ? altMatch[1] : cleanFileName;
-            
-            // Create the path with URL encoding for spaces and special characters
-            const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
-            
-            return `<img src="${newImagePath}" alt="${altText}" />`;
+        // Extract filename from path
+        const imageFileName = imagePath.split('/').pop().split('\\').pop();
+        
+        // Clean any URL encoding in the filename
+        const cleanFileName = decodeURIComponent(imageFileName);
+        
+        // Extract alt text from the original tag if it exists
+        const altMatch = match.match(/alt=["']([^"']*)["']/);
+        const altText = altMatch ? altMatch[1] : cleanFileName;
+        
+        // Create the path with URL encoding for spaces and special characters
+        const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
+        
+        return `<img src="${newImagePath}" alt="${altText}" />`;
           } catch (err) {
             logger.warn(`Warning: Error processing HTML img tag (${imagePath}): ${err.message}`);
             return match; // Return original if error
           }
-        }
-      );
+      }
+    );
     } catch (error) {
       logger.warn(`Warning: Error processing HTML img tags: ${error.message}`);
     }
 
     try {
-      // Replace links to other wiki pages
-      processedMarkdown = processedMarkdown.replace(/\[([^\]]+)\]\((\/[^)]+)\)/g, function(match, text, href) {
-        if (!href.includes('.attachment') && !href.includes('/attachments/')) {
+    // Replace links to other wiki pages
+    processedMarkdown = processedMarkdown.replace(/\[([^\]]+)\]\((\/[^)]+)\)/g, function(match, text, href) {
+      if (!href.includes('.attachment') && !href.includes('/attachments/')) {
           try {
-            const pageName = path.basename(href);
-            // Calculate proper path using normalized path - one level up for each path segment
-            const relPathToPage = '../'.repeat(pathDepth);
-            return `[${text}](${relPathToPage}${pageName}/index.html)`;
+        const pageName = path.basename(href);
+        // Calculate proper path using normalized path - one level up for each path segment
+        const relPathToPage = '../'.repeat(pathDepth);
+        return `[${text}](${relPathToPage}${pageName}/index.html)`;
           } catch (err) {
             logger.warn(`Warning: Error processing wiki link (${href}): ${err.message}`);
             return match; // Return original if error
           }
-        }
-        return match; // Leave attachment links for the previous replacement
-      });
+      }
+      return match; // Leave attachment links for the previous replacement
+    });
     } catch (error) {
       logger.warn(`Warning: Error processing wiki page links: ${error.message}`);
     }
