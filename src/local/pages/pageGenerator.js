@@ -4,10 +4,10 @@
 
 const fs = require('fs-extra');
 const path = require('path');
-const { logger } = require('../utils');
+const { logger } = require('../../utils');
 const { convertMarkdownToHtml } = require('./pageRenderer');
-const { generateNavMenu, generateBreadcrumbs, decodeTitle } = require('./utils/navUtils');
-const { calculatePathToRoot, createDynamicRootPathScript, createNavigationScript, sanitizePathSegment } = require('./utils/pathUtils');
+const { generateNavMenu, generateBreadcrumbs, decodeTitle } = require('../utils/navUtils');
+const { calculatePathToRoot, createDynamicRootPathScript, createNavigationScript, sanitizePathSegment } = require('../utils/pathUtils');
 
 /**
  * Create an HTML page for a markdown page

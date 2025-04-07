@@ -4,7 +4,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
-const { logger } = require('../utils');
+const { logger } = require('../../utils');
 
 /**
  * Process attachments for local preview

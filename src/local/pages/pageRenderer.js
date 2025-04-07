@@ -14,7 +14,8 @@ const { decodeUrlEncoded } = require('./utils/pathUtils');
  */
 function cleanAttachmentFilename(filename) {
   if (!filename) return '';
-  
+   
+   filename = removeAfterExtension(filename)
   // Remove size annotations like %20%3D750x or =750x at the end of the filename
   let cleaned = filename.replace(/(%20)*(%3D|\s*=\s*)[0-9x]+$/i, '');
   
@@ -123,7 +124,7 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
           try {
             // Get clean filename from the image path
             const cleanFileName = extractImageFilename(imagePath);
-            
+            logger.info('cleaned file name 1',cleanFileName)
             // Create the path with URL encoding for spaces and special characters
             const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
             
@@ -146,9 +147,10 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
           if (!imagePath) return match;
           
           try {
+            
             // Get clean filename from the image path
             const cleanFileName = extractImageFilename(imagePath);
-            
+            logger.info('cleaned file name 2',cleanFileName)
             // Create the path with URL encoding for spaces and special characters
             const newImagePath = `${pathToAttachments}${encodeURIComponent(cleanFileName)}`;
             
@@ -199,7 +201,7 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
             
             // Clean the filename - remove size annotations, GUIDs, etc.
             const cleanFileName = cleanAttachmentFilename(filename);
-            
+            logger.info('cleaned file name 3',cleanFileName)
             // Extract alt text from the original tag if it exists
             const altMatch = match.match(/alt=["']([^"']*)["']/);
             const altText = altMatch ? altMatch[1] : cleanFileName;
@@ -258,6 +260,22 @@ function convertMarkdownToHtml(markdown, attachmentMappings, pagePath, parentPat
               </details>
             </div>`;
   }
+}
+
+function removeAfterExtension(filename) {
+  // Find the last dot in the filename
+  const lastDotIndex = filename.lastIndexOf('.');
+  // If there's no dot, return the original filename
+  if (lastDotIndex === -1) return filename;
+  // Extract the base name and the extension
+  const baseName = filename.substring(0, lastDotIndex);
+  const extension = filename.substring(lastDotIndex);
+  // Find the first space or % after the extension
+  const endIndex = extension.search(/[\s%]/);
+  // If there's no space or %, return the base name with the extension
+  if (endIndex === -1) return baseName + extension;
+  // Otherwise, return the base name with the extension up to the space or %
+  return baseName + extension.substring(0, endIndex);
 }
 
 module.exports = {

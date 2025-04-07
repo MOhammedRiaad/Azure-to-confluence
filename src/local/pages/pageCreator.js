@@ -1,6 +1,6 @@
 const { marked } = require('marked');
 const path = require('path');
-const { uploadPageAttachments } = require('./attachmentUploader');
+const { uploadPageAttachments } = require('../attachments/attachmentUploader');
 
 /**
  * Create Confluence pages from wiki structure

@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
-const { parseWiki } = require('./wikiParser');
+const { parseWiki } = require('./utils/wikiParser');
 const { logger } = require('../utils');
 
 

@@ -5,10 +5,10 @@
 const fs = require('fs-extra');
 const path = require('path');
 const { logger } = require('../utils');
-const { parseWiki } = require('./wikiParser');
+const { parseWiki } = require('./utils/wikiParser');
 const { createIndexFile } = require('./htmlGenerator');
-const { createLocalPages } = require('./pageGenerator');
-const { processAttachmentsLocally } = require('./attachmentProcessor');
+const { createLocalPages } = require('./pages/pageGenerator');
+const { processAttachmentsLocally } = require('./attachments/attachmentProcessor');
 
 /**
  * Run a local test of the wiki conversion

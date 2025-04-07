@@ -4,9 +4,9 @@
 
 const fs = require('fs-extra');
 const path = require('path');
-const { logger } = require('../utils');
-const { countPages, countAttachments, countFolders } = require('./utils/statsUtils');
-const { sanitizePathSegment, decodeUrlEncoded } = require('./utils/pathUtils');
+const { logger } = require('../../utils');
+const { countPages, countAttachments, countFolders } = require('./statsUtils');
+const { sanitizePathSegment, decodeUrlEncoded } = require('./pathUtils');
 
 /**
  * Check if a directory or file should be excluded from the wiki structure
