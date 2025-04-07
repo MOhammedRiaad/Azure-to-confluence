@@ -87,50 +87,43 @@ function calculatePathToRoot(depth) {
  */
 function createDynamicRootPathScript() {
   return `
-  // Dynamically calculate path to root
-  document.addEventListener('DOMContentLoaded', function() {
-    // Function to load a CSS file dynamically
-    function loadCSS(href) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = href;
-      document.head.appendChild(link);
-      return link;
-    }
-    
-    // Try to detect the proper root path by checking if styles.css exists
-    function detectRootPath() {
-      // Start with possible paths
-      const possiblePaths = [
-        './', // Same directory
-        '../', // One level up
-        '../../', // Two levels up
-        '../../../', // Three levels up
-        '../../../../', // Four levels up
-        '../../../../../', // Five levels up
-      ];
+  (function loadStylesheet() {
+      // Get the current URL path
+      const currentPath = window.location.pathname;
       
-      // Use the fallback path from the link element
-      const styleLink = document.querySelector('link[rel="stylesheet"][href*="styles.css"]');
-      if (styleLink) {
-        // Get the path from the href
-        const path = styleLink.getAttribute('href');
-        const rootPath = path.replace('styles.css', '');
-        console.log('Root path from link:', rootPath);
-        return rootPath;
+      // Find the root path (up to local-output)
+      let rootPath = '';
+      
+      if (currentPath.includes('local-output')) {
+        // Extract the path up to and including local-output
+        const pathParts = currentPath.split('local-output');
+        rootPath = pathParts[0] + 'local-output/';
+      } else {
+        // Fallback in case we can't find local-output in the path
+        let tempPath = window.location.href;
+        tempPath = tempPath.substring(0, tempPath.lastIndexOf('/') + 1);
+        
+        // Navigate up to find the root
+        const pagesIndex = tempPath.indexOf('pages/');
+        if (pagesIndex !== -1) {
+          rootPath = tempPath.substring(0, pagesIndex);
+        } else {
+          rootPath = tempPath;
+        }
       }
       
-      // If we couldn't find the path, use the first one
-      return possiblePaths[0];
-    }
-    
-    // Get the root path
-    window.ROOT_PATH = detectRootPath();
-    console.log('Using root path:', window.ROOT_PATH);
-    
-    // Reload the stylesheet with the correct path
-    loadCSS(window.ROOT_PATH + 'styles.css');
-  });`;
+      // Create the stylesheet link element
+      const stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = rootPath + 'styles.css';
+      
+      // Log for debugging
+      console.log('Loading stylesheet from: ' + stylesheet.href);
+      
+      // Add the stylesheet to the head
+      document.head.appendChild(stylesheet);
+})()
+;`;
 }
 
 /**

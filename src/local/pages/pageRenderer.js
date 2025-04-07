@@ -4,8 +4,8 @@
 
 const { marked } = require('marked');
 const path = require('path');
-const { logger } = require('../utils');
-const { decodeUrlEncoded } = require('./utils/pathUtils');
+const { logger } = require('../../utils');
+const { decodeUrlEncoded } = require('../utils/pathUtils');
 
 /**
  * Clean up an attachment filename by removing size annotations and decoding URL-encoded characters
