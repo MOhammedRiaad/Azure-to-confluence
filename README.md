@@ -41,18 +41,19 @@ The tool uses environment variables for configuration. Create a `.env` file with
 
 ```env
 # Confluence API Configuration
-CONFLUENCE_USERNAME=your-username
-CONFLUENCE_API_TOKEN=your-api-token
 CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
+CONFLUENCE_USERNAME=your.email@example.com
+CONFLUENCE_API_TOKEN=your-api-token
+
+# Confluence Space Configuration
 CONFLUENCE_SPACE_KEY=SPACE
-CONFLUENCE_PARENT_PAGE_ID=123456
+CONFLUENCE_PARENT_PAGE_ID=12345
 
-# Project Configuration
-PROJECT_NAME=your-project-name
-
-# Optional Paths
-AZURE_WIKI_PATH=../wiki
-ATTACHMENTS_PATH=../.attachments
+# Paths Configuration
+AZURE_WIKI_PATH=../Your-Project
+PROJECT_NAME=Your-Project
+WIKI_ROOT_DIR=../Your-Project.wiki
+ATTACHMENTS_PATH=../Your-Project.wiki/.attachments
 ```
 
 ## Usage
