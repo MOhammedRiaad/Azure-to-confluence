@@ -37,8 +37,5 @@
   },
   "engines": {
     "node": ">=14.0.0"
-  },
-  "bin": {
-    "wiki-migrate": "./migrate.js"
   }
 }
