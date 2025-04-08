@@ -1,55 +1,45 @@
-# Azure Wiki to Confluence Migration Tool
+# Azure DevOps Wiki to Confluence Migration Tool
 
-This tool allows you to migrate content from an Azure DevOps Wiki to Confluence.
+A Node.js tool to migrate Azure DevOps wiki pages to Confluence while preserving structure and attachments.
 
 ## Features
 
-- Migrates all wiki pages while preserving the hierarchical structure
-- Uploads and maintains attachments (images, documents, etc.)
-- Converts markdown to Confluence-compatible format
-- Supports image sizing parameters
-- Handles wiki links and converts them to Confluence links
-- Preserves formatting, tables, code blocks, etc.
-- Auto-detects project structure and .attachments folder
+- Migrates wiki pages from Azure DevOps to Confluence
+- Preserves page hierarchy and structure
+- Handles attachments and images
+- Supports markdown conversion
+- Local testing mode
+- Flexible configuration
 
 ## Prerequisites
 
-- Node.js (v14+)
-- Access to both the Azure DevOps Wiki (local clone) and Confluence
-- Confluence API token with appropriate permissions
+- Node.js >= 14.0.0
+- Access to Azure DevOps Wiki
+- Confluence API token
 
 ## Setup
 
-### Step 1: Clone this repository
-
-```bash
-git clone <repository-url>
-cd azure-to-confluence
-```
-
-### Step 2: Install dependencies
-
-```bash
-npm install
-```
-
-### Step 3: Run the setup script
-
-```bash
-node setup.js
-```
-
-The setup script will:
-- Auto-detect your project name based on the directory structure
-- Create a `.env` file with your configuration
-- Guide you through setting up the Confluence connection
-- Help locate the wiki content and attachments folders
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Run the setup script:
+   ```bash
+   npm run setup
+   ```
+   This will guide you through configuring:
+   - Confluence credentials
+   - Space key
+   - Parent page ID
+   - Project name
+   - Wiki paths
 
 ## Configuration
 
-The tool is configured through environment variables, which can be set in a `.env` file. The setup script will help you create this file, but you can also create or edit it manually.
+The tool uses environment variables for configuration. Create a `.env` file with:
 
-```
+```env
 # Confluence API Configuration
 CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
 CONFLUENCE_USERNAME=your.email@example.com
@@ -66,122 +56,109 @@ WIKI_ROOT_DIR=../Your-Project.wiki
 ATTACHMENTS_PATH=../Your-Project.wiki/.attachments
 ```
 
-### Obtaining a Confluence API Token
-
-1. Log in to your Atlassian account at https://id.atlassian.com/manage-profile/security/api-tokens
-2. Click "Create API token"
-3. Give the token a name (e.g., "Wiki Migration") and click "Create"
-4. Copy the token and use it for the `CONFLUENCE_API_TOKEN` value
-
-### Finding the Confluence Parent Page ID
-
-1. Navigate to the Confluence page that should be the parent for your wiki
-2. Look at the URL, which will contain something like `/pages/viewpage.action?pageId=12345678`
-3. The number after `pageId=` is your parent page ID
-
 ## Usage
 
-### Running the Migration
-
-To run the migration with default settings:
+### Basic Commands
 
 ```bash
-node src/index.js
+# Show help
+node src/index.js --help
+
+# Run local test
+node src/index.js local
+
+# Migrate all pages
+node src/index.js migrate
+
+# Migrate a single page
+node src/index.js migrate --single "Page Name"
 ```
 
-This will migrate all pages from your Azure DevOps Wiki to Confluence.
+### Global Options
 
-### Command Line Options
+```bash
+-d, --debug           Enable debug mode
+-o, --output <path>   Output directory for local testing (default: "./local-output")
+```
 
-- `--local` or `-l`: Run in local test mode (doesn't upload to Confluence)
-- `--debug` or `-d`: Enable debug mode with more detailed logging
-- `--output` or `-o`: Specify an output directory for local test mode
-- `--singlePage "PageName"`: Process only a single page (useful for testing)
-- `--page 123456`: Process a specific Confluence page by ID (useful for updates)
+### Local Test Command Options
+
+```bash
+-w, --wiki-path <path>  Path to the wiki folder
+```
+
+### Migrate Command Options
+
+```bash
+-s, --single <page>  Migrate a single page
+-p, --parent <id>    Confluence parent page ID
+```
 
 ### Examples
 
-Test migration locally:
 ```bash
-node src/index.js --local
-```
+# Run with debug mode
+node src/index.js migrate --debug
 
-Migrate a single page:
-```bash
-node src/index.js --singlePage "Getting-Started"
-```
+# Test locally with custom wiki path
+node src/index.js local --wiki-path ../my-wiki
 
-Migrate with debug information:
-```bash
-node src/index.js --debug
+# Migrate single page to specific parent
+node src/index.js migrate --single "Getting Started" --parent 123456
 ```
 
 ## Different Wiki Folder Structures
 
-The tool is designed to work with different wiki folder structures:
+The tool supports various wiki folder structures:
 
-### Standard Azure DevOps Wiki Structure
-
+1. Standard Structure:
 ```
-- Your-Project.wiki/
-  - .attachments/
-  - .order
-  - Home.md
-  - Getting-Started.md
+project/
+  ├── .attachments/
+  └── wiki/
+      └── pages/
 ```
 
-### Project with Wiki as a Subdirectory
-
+2. Adjacent Wiki:
 ```
-- Your-Project/
-  - src/
-  - docs/
-  - wiki/
-    - .attachments/
-    - Home.md
+project/
+  └── src/
+wiki/
+  └── .attachments/
 ```
 
-### Wiki with Attachments in a Different Location
-
+3. Custom Structure:
 ```
-- Your-Project.wiki/
-  - Home.md
-- .attachments/
+custom/
+  └── wiki/
+      └── .attachments/
 ```
-
-The tool will attempt to detect these structures automatically. If it can't find your attachments, you can specify the path using the `ATTACHMENTS_PATH` environment variable.
 
 ## Troubleshooting
 
-### Image Attachments Not Working
+1. **Authentication Failed**
+   - Check your Confluence API token
+   - Verify username is correct
+   - Ensure token has necessary permissions
 
-If images aren't showing correctly in Confluence:
+2. **Missing Attachments**
+   - Verify .attachments folder exists
+   - Check file permissions
+   - Ensure paths are correctly configured
 
-1. Check that the `.attachments` folder is correctly detected
-2. Verify that the image files exist in the attachments folder
-3. Check the logs for any upload errors
-4. Run with `--debug` for more detailed logging
-
-### Authentication Errors
-
-If you encounter authentication errors:
-
-1. Verify your API token is correct and has not expired
-2. Check that you have the right permissions in Confluence
-3. Make sure the space key is correct
-
-### Converting Specific Pages
-
-If you need to test or fix a specific page:
-
-```bash
-node src/index.js --singlePage "Problematic-Page" --debug
-```
+3. **Page Creation Failed**
+   - Check space key exists
+   - Verify parent page ID is valid
+   - Ensure sufficient permissions
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-This project is licensed under the MIT License.
+ISC

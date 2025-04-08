@@ -1,7 +1,7 @@
 const { marked } = require('marked');
 const path = require('path');
 const fs = require('fs-extra');
-const { countPages } = require('./utils');
+const { countPages } = require('../utils');
 const { sanitizeTitle } = require('./wikiParser');
 const { createOrUpdatePage, deletePagesUnderParent } = require('./pageOperations');
 

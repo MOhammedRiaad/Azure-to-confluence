@@ -4,11 +4,12 @@
   "description": "Tool to convert Azure DevOps wiki to Confluence pages while preserving structure and attachments",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node src/index.js migrate",
     "setup": "node setup.js",
-    "test:local": "node src/index.js --local",
-    "debug": "node src/index.js --debug",
-    "migrate:single": "node src/index.js --singlePage",
+    "migrate": "node migrate.js",
+    "local": "node src/index.js local",
+    "debug": "node src/index.js migrate -d",
+    "migrate:single": "node src/index.js migrate -s",
     "postinstall": "echo \"Run 'npm run setup' to configure the migration tool.\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -25,7 +26,7 @@
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.8.4",
-    "confluence-api": "^1.4.0",
+    "commander": "^12.0.0",
     "dotenv": "^16.4.7",
     "form-data": "^4.0.2",
     "fs-extra": "^11.3.0",
