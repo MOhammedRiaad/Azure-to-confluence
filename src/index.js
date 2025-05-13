@@ -1,13 +1,11 @@
-const path = require('path');
-const fs = require('fs-extra');
-const { Command } = require('commander');
-const ConfluenceClient = require('./utils/Confluence-API');
-
-//const { runLocalTest } = require('./local/localTester');
-const {runLocalTest} = require('./local/index')
-const { getConfig } = require('./confluence/config');
-const { startConfluenceProcess } = require('./confluence');
-const { logger } = require('./utils');
+const path = require("path");
+const fs = require("fs-extra");
+const { Command } = require("commander");
+const ConfluenceClient = require("./utils/Confluence-API");
+const { runLocalTest } = require("./local/index");
+const { getConfig } = require("./confluence/config");
+const { startConfluenceProcess, fixPageNames } = require("./confluence");
+const { logger } = require("./utils");
 
 const config = getConfig();
 
@@ -15,22 +13,23 @@ const config = getConfig();
 const confluenceClient = new ConfluenceClient({
   baseUrl: config.confluence.baseUrl,
   username: config.confluence.username,
-  apiToken: config.confluence.password
+  apiToken: config.confluence.password,
 });
 
 // Add authentication test function
 async function testAuthentication() {
   try {
-    // Test authentication by attempting to get space information
     await confluenceClient.getSpaceByKey(config.confluence.spaceKey);
-    logger.info('Authentication successful');
+    logger.info("Authentication successful");
     return true;
   } catch (error) {
-    logger.error('Authentication failed:', error.message);
+    logger.error("Authentication failed:", error.message);
     if (error.response?.status === 401) {
-      logger.error('Invalid credentials. Please check your username and API token.');
+      logger.error(
+        "Invalid credentials. Please check your username and API token."
+      );
     } else if (error.response?.status === 404) {
-      logger.error('Space not found. Please check your space key.');
+      logger.error("Space not found. Please check your space key.");
     }
     return false;
   }
@@ -39,22 +38,24 @@ async function testAuthentication() {
 // Add error handling utility
 const handleApiError = (error) => {
   if (error.response) {
-    logger.error(`Confluence API error: ${error.response.status} - ${error.response.data?.message}`);
+    logger.error(
+      `Confluence API error: ${error.response.status} - ${error.response.data?.message}`
+    );
     switch (error.response.status) {
       case 400:
-        logger.error('Bad Request: Check the request payload.');
+        logger.error("Bad Request: Check the request payload.");
         break;
       case 401:
-        logger.error('Authentication failed. Please check your API token.');
+        logger.error("Authentication failed. Please check your API token.");
         break;
       case 403:
-        logger.error('Forbidden: Check API token permissions.');
+        logger.error("Forbidden: Check API token permissions.");
         break;
       case 404:
-        logger.error('Not Found: Verify the existence of the resource.');
+        logger.error("Not Found: Verify the existence of the resource.");
         break;
       default:
-        logger.error('Unexpected error.');
+        logger.error("Unexpected error.");
     }
   }
   throw error;
@@ -65,54 +66,84 @@ async function main() {
   const program = new Command();
 
   program
-    .name('wiki-migrate')
-    .description('CLI tool to migrate Azure DevOps wiki to Confluence')
-    .version('1.1.0');
+    .name("wiki-migrate")
+    .description("CLI tool to migrate Azure DevOps wiki to Confluence")
+    .version("1.1.0");
 
   // Global options
   program
-    .option('-d, --debug', 'Enable debug mode')
-    .option('-o, --output <path>', 'Output directory for local testing', './local-output');
+    .option("-d, --debug", "Enable debug mode")
+    .option(
+      "-o, --output <path>",
+      "Output directory for local testing",
+      "./local-output"
+    );
 
   // Local test command
   program
-    .command('local')
-    .description('Run a local test of the wiki conversion')
-    .option('-w, --wiki-path <path>', 'Path to the wiki folder')
+    .command("local")
+    .description("Run a local test of the wiki conversion")
+    .option("-w, --wiki-path <path>", "Path to the wiki folder")
     .action(async (options) => {
       try {
         const wikiRootFolder = path.dirname(config.paths.wikiRoot);
-        const adjustedWikiRoot = options.wikiPath || 
-                               path.join(config.paths.wikiRoot, 'Date-Code');
-        
+        const adjustedWikiRoot =
+          options.wikiPath || path.join(config.paths.wikiRoot, "Date-Code");
+
         logger.info(`Wiki root folder: ${wikiRootFolder}`);
         logger.info(`Adjusted wiki root: ${adjustedWikiRoot}`);
-        
-        await runLocalTest(adjustedWikiRoot, program.opts().output, { wikiRootFolder });
+
+        await runLocalTest(adjustedWikiRoot, program.opts().output, {
+          wikiRootFolder,
+        });
       } catch (error) {
-        logger.error('Error running local test:', error);
+        logger.error("Error running local test:", error);
+        process.exit(1);
+      }
+    });
+
+  // Fix names command
+  program
+    .command("fix-names")
+    .description("Auto-fix duplicate page names")
+    .action(async () => {
+      try {
+        if (program.opts().debug) {
+          process.env.DEBUG = "true";
+        }
+
+        const authSuccessful = await testAuthentication();
+        if (!authSuccessful) {
+          logger.error("Authentication failed. Exiting.");
+          process.exit(1);
+        }
+
+        await fixPageNames(confluenceClient, config);
+        logger.info("Page names fixed successfully.");
+      } catch (error) {
+        handleApiError(error);
         process.exit(1);
       }
     });
 
   // Migrate command
   program
-    .command('migrate')
-    .description('Migrate wiki pages to Confluence')
-    .option('-s, --single <page>', 'Migrate a single page')
-    .option('-p, --parent <id>', 'Confluence parent page ID')
+    .command("migrate")
+    .description("Migrate wiki pages to Confluence")
+    .option("-s, --single <page>", "Migrate a single page")
+    .option("-p, --parent <id>", "Confluence parent page ID")
     .action(async (options) => {
       try {
         // Enable debug mode if specified
         if (program.opts().debug) {
-          logger.info('Running in debug mode - full logging enabled');
-          process.env.DEBUG = 'true';
+          logger.info("Running in debug mode - full logging enabled");
+          process.env.DEBUG = "true";
         }
 
         // Test authentication before proceeding
         const authSuccessful = await testAuthentication();
         if (!authSuccessful) {
-          logger.error('Authentication failed. Exiting.');
+          logger.error("Authentication failed. Exiting.");
           process.exit(1);
         }
 
@@ -130,9 +161,18 @@ async function main() {
 
         // Start the migration process
         await startConfluenceProcess(confluenceClient);
-        logger.info('Migration completed successfully');
+        logger.info("Migration completed successfully");
       } catch (error) {
-        handleApiError(error);
+        if (error.message?.includes("duplicate page names")) {
+          logger.error("\nDuplicate pages found!");
+          logger.error("Please:");
+          logger.error("1. Review the duplicates using menu option 7");
+          logger.error("2. Use menu option 8 to auto-fix the page names");
+          logger.error("3. Or manually rename the pages in your wiki");
+          logger.error("4. Then run the migration again\n");
+        } else {
+          handleApiError(error);
+        }
         process.exit(1);
       }
     });
