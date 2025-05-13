@@ -8,6 +8,7 @@ const {
   getValidationState,
   clearValidationState,
 } = require("./pageValidator");
+const { applyNameFixes, saveFixes, loadFixes } = require("./pageNameFixer");
 const path = require("path");
 const fs = require("fs-extra");
 
@@ -22,121 +23,52 @@ async function startConfluenceProcess(confluenceClient) {
     throw new Error("Confluence client is required");
   }
 
-  const wikiStructure = await retryWithBackoff(() =>
+  let wikiStructure = await retryWithBackoff(() =>
     parseAndProcessWiki(config.paths.wikiRoot)
   );
 
   logger.info("Wiki structure parsed successfully.");
 
+  if (config.project.passValidation == 0) {
+    logger.info("Validation passed. Proceeding with migration.");
+
+    // Load any existing page fixes
+    const pageFixes = await loadFixes();
+    if (Object.keys(pageFixes).length > 0) {
+      logger.info("Loaded existing page fixes:");
+      Object.entries(pageFixes).forEach(([original, fixed]) => {
+        logger.info(`- "${original}" → "${fixed}"`);
+      });
+    }
+
+    // Check for existing validation state
+    const existingValidation = await getValidationState();
+    if (existingValidation.length > 0) {
+      throw new Error(
+        "Found existing duplicate page names. Please review and fix the duplicates before proceeding with migration."
+      );
+    }
+
+    // Validate all pages for duplicates, considering existing fixes
+    const duplicates = await validatePages(
+      confluenceClient,
+      config.confluence.spaceKey,
+      wikiStructure.pages
+    );
+
+    if (duplicates.length > 0) {
+      // Save validation state
+      await saveValidationState(duplicates);
+      throw new Error(
+        "Found duplicate page names that need to be resolved. Use the menu to review and fix the duplicates."
+      );
+    }
+  }
   // Filter out project directories
   wikiStructure.pages = filterOutProjectDir(wikiStructure.pages);
   logger.info(
     `Filtered wiki structure now has ${wikiStructure.pages.length} root pages`
   );
-
-  // Check for existing validation state
-  const existingValidation = await getValidationState();
-  if (existingValidation.length > 0) {
-    logger.info(
-      "Found existing validation state with previously detected duplicate pages."
-    );
-    logger.info("Re-validating to check if issues have been resolved...");
-
-    // Re-validate only the previously problematic pages
-    const stillDuplicate = [];
-    for (const duplicate of existingValidation) {
-      // Check if page still exists in wiki structure
-      const pageExists = findPageInStructure(
-        wikiStructure.pages,
-        duplicate.title
-      );
-      if (!pageExists) {
-        logger.info(
-          `Page "${duplicate.title}" no longer exists in wiki - cleared`
-        );
-        continue;
-      }
-
-      // For pages that existed in Confluence, check if they're still there
-      if (duplicate.reason === "Page already exists in Confluence") {
-        try {
-          const existingPage = await confluenceClient.getPageByTitle(
-            config.confluence.spaceKey,
-            duplicate.title
-          );
-          if (existingPage) {
-            stillDuplicate.push(duplicate);
-            logger.warn(`Page "${duplicate.title}" still exists in Confluence`);
-          } else {
-            logger.info(
-              `Page "${duplicate.title}" no longer exists in Confluence - cleared`
-            );
-          }
-        } catch (error) {
-          if (error.status !== 404) {
-            logger.warn(
-              `Error checking page "${duplicate.title}": ${error.message}`
-            );
-          }
-        }
-      } else {
-        // For internal wiki duplicates, check if they're still duplicate
-        const duplicateCount = countPagesWithTitle(
-          wikiStructure.pages,
-          duplicate.title
-        );
-        if (duplicateCount > 1) {
-          stillDuplicate.push(duplicate);
-          logger.warn(
-            `Page "${duplicate.title}" still has ${duplicateCount} instances in wiki`
-          );
-        } else {
-          logger.info(
-            `Page "${duplicate.title}" is no longer duplicate in wiki - cleared`
-          );
-        }
-      }
-    }
-
-    // If no more duplicates exist, clear the validation state
-    if (stillDuplicate.length === 0) {
-      logger.info("All previously detected issues have been resolved!");
-      await clearValidationState();
-    } else {
-      // Update validation state with remaining issues
-      await saveValidationState(stillDuplicate);
-      logger.error("Some duplicate pages still need to be resolved:");
-      stillDuplicate.forEach((duplicate) => {
-        logger.error(`- "${duplicate.title}" (${duplicate.reason})`);
-      });
-      logger.error(
-        "Please resolve remaining duplicate page names before proceeding with migration."
-      );
-      process.exit(1);
-    }
-  }
-
-  // Validate all pages for new duplicates
-  const newDuplicates = await validatePages(
-    confluenceClient,
-    config.confluence.spaceKey,
-    wikiStructure.pages
-  );
-
-  if (newDuplicates.length > 0) {
-    // Save validation state
-    await saveValidationState(newDuplicates);
-
-    logger.error("Found new duplicate pages that need to be resolved:");
-    newDuplicates.forEach((duplicate) => {
-      logger.error(`- "${duplicate.title}" (${duplicate.reason})`);
-    });
-
-    logger.error(
-      "Please resolve duplicate page names and try again. Current validation state has been saved."
-    );
-    process.exit(1);
-  }
 
   // Create a mappings object for attachments
   const attachmentMappings = {};
@@ -162,7 +94,7 @@ async function startConfluenceProcess(confluenceClient) {
     logger.info("No attachments found in wiki structure");
   }
 
-  // Create all pages with their attachments
+  // Create all pages with their attachments, passing the page fixes
   await retryWithBackoff(() =>
     createConfluencePages(
       wikiStructure,
@@ -170,11 +102,61 @@ async function startConfluenceProcess(confluenceClient) {
       config.confluence.spaceKey,
       config.confluence.parentPageId,
       attachmentMappings,
-      config
+      config,
+      (pageFixes = {})
     )
   );
 
   console.log("Wiki conversion completed successfully!");
+}
+
+/**
+ * Auto-fix duplicate page names
+ */
+async function fixPageNames(confluenceClient, config) {
+  if (!confluenceClient) {
+    throw new Error("Confluence client is required");
+  }
+
+  // Load existing validation state
+  const duplicates = await getValidationState();
+  if (!duplicates || duplicates.length === 0) {
+    throw new Error(
+      "No duplicate pages found in validation state. Run migration first to detect duplicates."
+    );
+  }
+
+  // Parse wiki structure
+  let wikiStructure = await retryWithBackoff(() =>
+    parseAndProcessWiki(config.paths.wikiRoot)
+  );
+
+  // Filter out project directories
+  wikiStructure.pages = filterOutProjectDir(wikiStructure.pages);
+
+  // Apply fixes using project name
+  const projectName = config.project.name || "Project";
+  const { wikiStructure: fixedStructure, fixes } = await applyNameFixes(
+    wikiStructure,
+    duplicates,
+    projectName
+  );
+
+  // Save the applied fixes
+  await saveFixes(fixes);
+
+  // Log the changes
+  logger.info("Applied the following page name fixes:");
+  Object.entries(fixes).forEach(([original, fixed]) => {
+    logger.info(`- "${original}" → "${fixed}"`);
+  });
+
+  // Clear validation state since we've applied fixes
+  await clearValidationState();
+
+  logger.info(
+    "Page names fixed successfully. Please run the migration again to validate the changes."
+  );
 }
 
 /**
@@ -402,4 +384,5 @@ function countPagesWithTitle(pages, title) {
 
 module.exports = {
   startConfluenceProcess,
+  fixPageNames,
 };

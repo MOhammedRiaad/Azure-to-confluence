@@ -1,24 +1,24 @@
-const fs = require('fs-extra');
-const path = require('path');
-const { logger } = require('../utils');
+const fs = require("fs-extra");
+const path = require("path");
+const { logger } = require("../utils");
 
-async function parseWiki(wikiPath, projectDir = '') {
+async function parseWiki(wikiPath, projectDir = "") {
   try {
     logger.info(`Parsing wiki at path: ${wikiPath}`);
     const structure = {
-      pages: []
+      pages: [],
     };
 
     // Read directory contents
     const items = await fs.readdir(wikiPath);
-    
+
     // Process each item in the directory
     for (const item of items) {
       const fullPath = path.join(wikiPath, item);
       const stats = await fs.stat(fullPath);
-      
+
       // Skip hidden files and specified directories
-      if (item.startsWith('.') || ['node_modules', '.git'].includes(item)) {
+      if (item.startsWith(".") || ["node_modules", ".git"].includes(item)) {
         continue;
       }
 
@@ -29,20 +29,20 @@ async function parseWiki(wikiPath, projectDir = '') {
           structure.pages.push({
             title: item,
             path: fullPath,
-            children: subStructure.pages
+            children: subStructure.pages,
           });
         }
-      } else if (item.endsWith('.md')) {
+      } else if (item.endsWith(".md")) {
         // Handle Markdown file
         logger.debug(`Reading Markdown file: ${fullPath}`);
         try {
-          const content = await fs.readFile(fullPath, 'utf8');
+          const content = await fs.readFile(fullPath, "utf8");
           if (content) {
             structure.pages.push({
-              title: path.basename(item, '.md'),
+              title: path.basename(item, ".md"),
               path: fullPath,
               content: content,
-              children: []
+              children: [],
             });
             logger.debug(`Successfully loaded content for: ${item}`);
           } else {
@@ -56,7 +56,7 @@ async function parseWiki(wikiPath, projectDir = '') {
 
     return structure;
   } catch (error) {
-    logger.error('Error parsing wiki structure:', error);
+    logger.error("Error parsing wiki structure:", error);
     throw error;
   }
 }
@@ -67,8 +67,8 @@ async function parseWiki(wikiPath, projectDir = '') {
  * @returns {string} - Sanitized title with URL encoding for special characters
  */
 function sanitizeTitle(title) {
-  if (!title) return '';
-  
+  if (!title) return "";
+
   try {
     // Replace encoded character sequences with their plain versions
     let decodedTitle = title;
@@ -79,25 +79,25 @@ function sanitizeTitle(title) {
       // If decoding fails, use the original title
       logger.warn(`Could not decode title "${title}": ${e.message}`);
     }
-    
+
     // Remove any path separators and problematic characters
     const sanitized = decodedTitle
-      .replace(/[\\/]/g, '-')        // Replace slashes with hyphens
-      .replace(/[<>:"|?*]/g, '_')    // Replace problematic characters with underscores
-      .replace(/%/g, '-')            // Replace percent signs with hyphens
-      .replace(/&/g, 'and')          // Replace ampersands with 'and'
-      .replace(/\+/g, ' ');          // Replace plus signs with spaces
-    
+      .replace(/[\\/]/g, "-") // Replace slashes with hyphens
+      .replace(/[<>:"|?*]/g, "_") // Replace problematic characters with underscores
+      .replace(/%/g, "") // Remove percent signs
+      .replace(/&/g, "and") // Replace ampersands with 'and'
+      .replace(/\+/g, " "); // Replace plus signs with spaces
+
     // Trim the title and return the readable version
     return sanitized.trim();
   } catch (error) {
     logger.error(`Error sanitizing title "${title}":`, error);
     // Return a fallback safe version of the title
-    return title.replace(/[^\w-]/g, '_').trim();
+    return title.replace(/[^\w-]/g, "_").trim();
   }
 }
 
 module.exports = {
   parseWiki,
-  sanitizeTitle
+  sanitizeTitle,
 };

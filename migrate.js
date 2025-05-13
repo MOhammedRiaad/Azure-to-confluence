@@ -37,6 +37,74 @@ function runCommand(command, options = {}) {
   }
 }
 
+// Function to display duplicate pages from validation state
+async function displayDuplicatePages() {
+  const validationFile = path.join(process.cwd(), ".validation-state.json");
+
+  if (!fs.existsSync(validationFile)) {
+    console.log(
+      "\nNo validation state file found. Run the migration first to detect duplicates."
+    );
+    return;
+  }
+
+  try {
+    const validationState = await fs.readJson(validationFile);
+    if (validationState.length === 0) {
+      console.log("\nNo duplicate pages found in validation state.");
+      return;
+    }
+
+    console.log("\nDuplicate pages found:");
+    console.log("=====================");
+
+    validationState.forEach((duplicate, index) => {
+      console.log(`\n${index + 1}. "${duplicate.title}"`);
+      console.log(`   Reason: ${duplicate.reason}`);
+      if (duplicate.confluenceId) {
+        console.log(`   Confluence Page ID: ${duplicate.confluenceId}`);
+      }
+      if (duplicate.path) {
+        console.log(`   Confluence Page Path: ${duplicate.path}`);
+      }
+    });
+
+    console.log("\nValidation state file location:", validationFile);
+    return validationState;
+  } catch (error) {
+    console.error("Error reading validation state:", error);
+    return null;
+  }
+}
+
+// Function to handle auto-fixing page names
+async function autoFixPageNames() {
+  console.log("\nAuto-fixing page names...\n");
+
+  const duplicates = await displayDuplicatePages();
+  if (!duplicates) {
+    return;
+  }
+
+  const proceed = await prompt(
+    "\nDo you want to proceed with auto-fixing these page names? (y/n): "
+  );
+  if (proceed.toLowerCase() !== "y") {
+    console.log("Auto-fix cancelled.");
+    return;
+  }
+
+  try {
+    // Run the auto-fix command
+    runCommand("node src/index.js fix-names");
+    console.log("\nAuto-fix completed. Please:");
+    console.log("1. Review the changes in .page-name-fixes.json");
+    console.log("2. Run the migration again to validate the changes");
+  } catch (error) {
+    console.error("Error during auto-fix:", error);
+  }
+}
+
 // Main menu function
 async function showMainMenu() {
   console.clear();
@@ -52,11 +120,13 @@ async function showMainMenu() {
   console.log("4. Migrate a single page");
   console.log("5. Debug mode (verbose logging)");
   console.log("6. Update an existing page in Confluence");
-  console.log("7. Clear validation state");
-  console.log("8. Exit");
+  console.log("7. Display duplicate pages");
+  console.log("8. Auto-fix duplicate page names");
+  console.log("9. Clear validation state");
+  console.log("10. Exit");
   console.log("");
 
-  const choice = await prompt("Enter your choice (1-8): ");
+  const choice = await prompt("Enter your choice (1-10): ");
 
   switch (choice) {
     case "1":
@@ -78,16 +148,21 @@ async function showMainMenu() {
       await updateExistingPage();
       break;
     case "7":
-      try {
-        await clearValidationState();
-        console.log(
-          "Validation state cleared successfully. You can now run the migration again."
-        );
-      } catch (error) {
-        console.error("Error clearing validation state:", error);
-      }
+      await displayDuplicatePages();
       break;
     case "8":
+      await autoFixPageNames();
+      break;
+    case "9":
+      const validationFile = path.join(process.cwd(), ".validation-state.json");
+      if (fs.existsSync(validationFile)) {
+        await fs.remove(validationFile);
+        console.log("Validation state cleared successfully.");
+      } else {
+        console.log("No validation state file exists.");
+      }
+      break;
+    case "10":
       console.log("Exiting. Goodbye!");
       console.log("OPM Team :)");
       rl.close();

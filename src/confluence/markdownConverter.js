@@ -60,7 +60,7 @@ async function createConfluenceImageMacro(
     }
   }
 
-  // Fallback to standard attachment reference with width if specified
+  //Fallback to standard attachment reference with width if specified
   if (width) {
     return `<ac:image${
       altText ? ` ac:alt="${altText}"` : ""
@@ -126,7 +126,7 @@ async function convertImages(
     /!([\w.-]+\.(png|jpg|jpeg|gif|svg))/gi,
     (match, filename) => {
       logger.info(`Processing simple image reference: ${match}`);
-      return `![${filename}](/.attachments/${filename})`;
+      return `[${filename}](/.attachments/${filename})`;
     }
   );
 
@@ -482,13 +482,15 @@ function cleanupContent(content) {
  * @param {Object} attachmentMappings - Mappings of attachments.
  * @param {string} pageId - The Confluence page ID.
  * @param {Object} pageIdMap - Map of page titles to their Confluence IDs.
+ * @param {Object} pageFixes - Map of original titles to fixed titles
  * @returns {string} - The processed content with Confluence links.
  */
 function processConfluenceLinks(
   content,
   attachmentMappings,
   pageId,
-  pageIdMap = {}
+  pageIdMap = {},
+  pageFixes = {}
 ) {
   // Input validation
   if (typeof content !== "string") {
@@ -507,6 +509,7 @@ function processConfluenceLinks(
     // Get the Confluence space name from environment variables
     const confluenceSpace = process.env.CONFLUENCE_SPACE_KEY;
     const baseUrl = process.env.CONFLUENCE_BASE_URL;
+
     let processedContent = content;
 
     // Process wiki-style links with display text: [[Page Name|Display Text]]
@@ -591,7 +594,7 @@ function processConfluenceLinks(
     return processedContent;
   } catch (error) {
     console.error("Error processing Confluence links:", error);
-    return content; // Return original content if there's an error
+    return content;
   }
 }
 
@@ -602,6 +605,8 @@ function processConfluenceLinks(
  * @param {string} pagePath - Path to the page
  * @param {Object} confluenceClient - Confluence API client
  * @param {string} pageId - Page ID
+ * @param {Object} pagesIdMap - Map of page titles to their Confluence IDs
+ * @param {Object} pageFixes - Map of original titles to fixed titles
  * @returns {Promise<string>} - Converted HTML
  */
 async function convertMarkdownToConfluenceHtml(
@@ -610,7 +615,8 @@ async function convertMarkdownToConfluenceHtml(
   pagePath,
   confluenceClient,
   pageId,
-  pagesIdMap
+  pagesIdMap = {},
+  pageFixes = {}
 ) {
   try {
     logger.info(
@@ -656,14 +662,14 @@ async function convertMarkdownToConfluenceHtml(
       // Extract code blocks from the content
       const { content, codeBlocks } = processCodeBlocks(markdownContent);
 
-      // Process various types of links
+      // Process various types of links with page fixes
       let processedContent = processConfluenceLinks(
         content,
         attachmentMappings,
         pageId,
-        pagesIdMap
+        pagesIdMap,
+        pageFixes
       );
-
       // Process images - this was missing!
       processedContent = await convertImages(
         processedContent,

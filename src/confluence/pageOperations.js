@@ -1,7 +1,7 @@
-// const { sanitizePageTitle } = require('./sanitize');
 const { convertMarkdownToConfluenceHtml } = require("./markdownConverter");
 const { uploadAttachments } = require("./attachmentOperations");
 const { logger } = require("../utils");
+const { sanitizeTitle } = require("./wikiParser");
 
 /**
  * Create or update a Confluence page
@@ -11,6 +11,9 @@ const { logger } = require("../utils");
  * @param {string} spaceKey - Space key
  * @param {string} parentPageId - Parent page ID
  * @param {Object} attachmentMappings - Mapping of attachments
+ * @param {Object} pagesIdMap - Map of page titles to their IDs
+ * @param {boolean} InitializingallPages - Whether this is an initial page creation
+ * @param {Object} pageFixes - Map of original titles to fixed titles
  * @returns {Promise<string>} Created page ID
  */
 async function createOrUpdatePage(
@@ -21,7 +24,8 @@ async function createOrUpdatePage(
   parentPageId,
   attachmentMappings,
   pagesIdMap,
-  InitializingallPages
+  InitializingallPages,
+  pageFixes = {}
 ) {
   try {
     // Ensure we have a readable title - decode it if necessary for display
@@ -33,7 +37,11 @@ async function createOrUpdatePage(
       console.warn(`Unable to decode page title "${page.title}": ${e.message}`);
     }
 
-    console.log(`Creating/updating page: ${originalTitle}`);
+    // Use the fixed title if available
+    const pageTitle = pageFixes[originalTitle] || originalTitle;
+    console.log(
+      `Creating/updating page: ${pageTitle} (Original: ${originalTitle})`
+    );
 
     // Validate page object and content
     if (!page || typeof page !== "object") {
@@ -44,7 +52,7 @@ async function createOrUpdatePage(
     let pageContent = page.content;
     if (!pageContent) {
       console.warn(
-        `No content found for page ${originalTitle}, using empty content`
+        `No content found for page ${pageTitle}, using empty content`
       );
       pageContent = "";
     }
@@ -55,7 +63,7 @@ async function createOrUpdatePage(
         pageContent = await pageContent;
       } catch (error) {
         console.error(
-          `Error resolving content promise for page ${originalTitle}:`,
+          `Error resolving content promise for page ${pageTitle}:`,
           error
         );
         pageContent = "";
@@ -68,16 +76,26 @@ async function createOrUpdatePage(
 
     console.log(`spaceKey: ${spaceKey}`);
     console.log(`parentPageId: ${parentPageId}`);
-    // Check if page exists by its original title
-    console.log(`Checking if page "${originalTitle}" exists...`);
+
+    // Check if page exists by its current title (possibly fixed)
+    console.log(`Checking if page "${pageTitle}" exists...`);
     try {
       existingPage = await getPageByTitle(
         confluenceClient,
         spaceKey,
-        originalTitle
+        pageTitle
       );
+
+      // If not found by fixed title, try original title
+      if (!existingPage && pageTitle !== originalTitle) {
+        existingPage = await getPageByTitle(
+          confluenceClient,
+          spaceKey,
+          originalTitle
+        );
+      }
     } catch (e) {
-      console.error(`Error checking page "${originalTitle}":`, e);
+      console.error(`Error checking page "${pageTitle}":`, e);
     }
 
     console.log(`Existing page: ${existingPage ? "Yes" : "No"}`);
@@ -85,7 +103,7 @@ async function createOrUpdatePage(
       pageId = existingPage.id;
       if (InitializingallPages && pageId) {
         logger.warn(
-          `Skipping page "${originalTitle}" as it's in the already processed pages list.`
+          `Skipping page "${pageTitle}" as it's in the already processed pages list.`
         );
         return pageId;
       }
@@ -110,14 +128,15 @@ async function createOrUpdatePage(
         page.path,
         confluenceClient,
         pageId,
-        pagesIdMap
+        pagesIdMap,
+        pageFixes
       );
 
-      // Update page with processed content and original title
+      // Update page with processed content and current title
       await updatePage(
         confluenceClient,
         pageId,
-        originalTitle,
+        pageTitle,
         htmlContent,
         spaceKey
       );
@@ -126,7 +145,7 @@ async function createOrUpdatePage(
       pageId = await createPage(
         confluenceClient,
         parentPageId,
-        originalTitle,
+        pageTitle,
         "<p>Initializing page...</p>",
         spaceKey
       );
@@ -151,13 +170,15 @@ async function createOrUpdatePage(
         attachmentMappings,
         page.path,
         confluenceClient,
-        pageId
+        pageId,
+        pagesIdMap,
+        pageFixes
       );
 
       await updatePage(
         confluenceClient,
         pageId,
-        originalTitle,
+        pageTitle,
         htmlContent,
         spaceKey
       );
@@ -178,37 +199,21 @@ async function createOrUpdatePage(
  */
 async function deletePagesUnderParent(confluenceClient, parentPageId) {
   try {
-    console.log(`Fetching child pages for parent page ID: ${parentPageId}`);
+    logger.info(`Deleting all pages under parent page ID: ${parentPageId}`);
+    const children = await confluenceClient.getChildren(parentPageId);
 
-    // Fetch child pages of the parent page
-    const childPages = await confluenceClient.getChildPages(parentPageId);
-
-    if (childPages && childPages.length > 0) {
-      console.log(
-        `Found ${childPages.length} child pages under parent page ID: ${parentPageId}`
-      );
-
-      // Recursively delete child pages
-      for (const childPage of childPages) {
-        console.log(
-          `Deleting child page: ${childPage.title} (ID: ${childPage.id})`
-        );
-        await deletePagesUnderParent(confluenceClient, childPage.id);
-      }
+    for (const child of children) {
+      await confluenceClient.deletePage(child.id);
+      logger.info(`Deleted page ${child.title} (${child.id})`);
     }
 
-    // Delete the parent page after all child pages are deleted
-    console.log(`Deleting parent page ID: ${parentPageId}`);
-    await confluenceClient.deletePage(parentPageId);
-    console.log(`Successfully deleted page ID: ${parentPageId}`);
+    logger.info("All child pages deleted successfully");
   } catch (error) {
-    console.error(
-      `Error deleting pages under parent page ID ${parentPageId}:`,
-      error
-    );
+    logger.error("Error deleting pages:", error);
     throw error;
   }
 }
+
 /**
  * Get a page by title using the custom ConfluenceClient
  * @param {Object} confluenceClient - Custom Confluence API client
@@ -218,21 +223,12 @@ async function deletePagesUnderParent(confluenceClient, parentPageId) {
  */
 async function getPageByTitle(confluenceClient, spaceKey, title) {
   try {
-    console.log(`Getting page by title: ${title} in space: ${spaceKey}`);
-    const page = await confluenceClient.getPageByTitle(spaceKey, title, {
-      expand: "version",
-    });
-
-    if (page) {
-      console.log(`Found page with ID: ${page.id}`);
-    } else {
-      console.log(`No page found with title: ${title}`);
-    }
-
-    return page;
+    return await confluenceClient.getPageByTitle(spaceKey, title);
   } catch (error) {
-    console.error(`Error getting page by title ${title}:`, error);
-    return null;
+    if (error.status === 404) {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -252,21 +248,22 @@ async function createPage(
   content,
   spaceKey
 ) {
-  const pageData = {
-    type: "page",
-    title: title,
-    space: { key: spaceKey },
-    body: {
-      storage: {
-        value: content,
-        representation: "storage",
-      },
-    },
-    ancestors: parentPageId ? [{ id: parentPageId }] : [],
-  };
-
   try {
+    const pageData = {
+      type: "page",
+      title: title,
+      space: { key: spaceKey },
+      body: {
+        storage: {
+          value: content,
+          representation: "storage",
+        },
+      },
+      ancestors: [{ id: parentPageId }],
+    };
+
     const response = await confluenceClient.createPage(pageData);
+    console.log(`Created page "${title}" with ID ${response.id}`);
     return response.id;
   } catch (error) {
     console.error(`Error creating page ${title}:`, error);

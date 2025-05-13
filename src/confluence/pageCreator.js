@@ -1,5 +1,4 @@
 const { countPages, logger } = require("../utils");
-
 const {
   createOrUpdatePage,
   deletePagesUnderParent,
@@ -12,7 +11,8 @@ const {
  * @param {string} spaceKey - Confluence space key
  * @param {string} parentPageId - Parent page ID
  * @param {Object} attachmentMappings - Attachment mappings
- * @param {Object} confluenceConfig - Confluence API client
+ * @param {Object} confluenceConfig - Confluence configuration
+ * @param {Object} pageFixes - Map of original titles to fixed titles
  * @returns {Promise<void>}
  */
 async function createConfluencePages(
@@ -21,46 +21,31 @@ async function createConfluencePages(
   spaceKey,
   parentPageId,
   attachmentMappings,
-  confluenceConfig
+  confluenceConfig,
+  pageFixes = {}
 ) {
   try {
     logger.info("Creating Confluence pages...");
     logger.info(`Space key: ${spaceKey}`);
     logger.info(`Parent page ID: ${parentPageId}`);
     logger.info(`Total pages to create: ${countPages(wikiStructure.pages)}`);
-    try {
-      logger.info(
-        `Starting deletion of all pages under parent page ID: ${parentPageId}`
-      );
-      //await deletePagesUnderParent(confluenceClient, parentPageId);
-      logger.info("All pages deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting pages:", error);
-    }
-    const pagesIdMap = {};
-    logger.info("Start all pages with initial data !");
 
-    Promise.all(
-      await processALLPages(
-        wikiStructure.pages,
-        confluenceClient,
-        confluenceConfig,
-        spaceKey,
-        parentPageId,
-        attachmentMappings,
-        pagesIdMap
-      )
-    )
-      .then(() => {
-        logger.info("All pages created successfully!");
-      })
-      .catch((error) => {
-        logger.error("Error creating pages:", error);
-      });
-    logger.info("complete all pages with initial data !");
+    const pageIdMap = {};
+    logger.info("Starting page creation process...");
 
-    logger.info("Start all pages with its data !");
-    // Process pages in hierarchical order
+    // Create initial pages
+    await processAllPages(
+      wikiStructure.pages,
+      confluenceClient,
+      confluenceConfig,
+      spaceKey,
+      parentPageId,
+      attachmentMappings,
+      pageIdMap,
+      pageFixes
+    );
+
+    // Process pages with full content in hierarchical order
     await processPages(
       wikiStructure.pages,
       confluenceClient,
@@ -68,7 +53,8 @@ async function createConfluencePages(
       spaceKey,
       parentPageId,
       attachmentMappings,
-      pagesIdMap
+      pageIdMap,
+      pageFixes
     );
 
     logger.info("All pages created successfully!");
@@ -86,6 +72,8 @@ async function createConfluencePages(
  * @param {string} parentPageId - Parent page ID
  * @param {string} spaceKey - Parent page ID
  * @param {Object} attachmentMappings - Mapping of attachments
+ * @param {Object} pageIdMap - Map of page titles to their IDs
+ * @param {Object} pageFixes - Map of original titles to fixed titles
  * @returns {Promise<void>}
  */
 async function processPages(
@@ -95,11 +83,13 @@ async function processPages(
   spaceKey,
   parentPageId,
   attachmentMappings,
-  pagesIdMap
+  pageIdMap,
+  pageFixes
 ) {
   for (const page of pages) {
     try {
-      logger.info(`Processing page: ${page.title}`);
+      const pageTitle = pageFixes[page.title] || page.title;
+      logger.info(`Processing page: ${pageTitle}`);
 
       // Create or update the page
       const pageId = await createOrUpdatePage(
@@ -109,9 +99,14 @@ async function processPages(
         spaceKey,
         parentPageId,
         attachmentMappings,
-        pagesIdMap,
-        false
+        pageIdMap,
+        false,
+        pageFixes
       );
+
+      if (pageId) {
+        pageIdMap[pageTitle] = pageId;
+      }
 
       // Process child pages if any
       if (page.children && page.children.length > 0) {
@@ -122,7 +117,8 @@ async function processPages(
           spaceKey,
           pageId,
           attachmentMappings,
-          pagesIdMap
+          pageIdMap,
+          pageFixes
         );
       }
     } catch (error) {
@@ -130,33 +126,40 @@ async function processPages(
     }
   }
 }
+
 /**
- * Process a list of pages using the custom ConfluenceClient
+ * Process all pages initially to create page stubs
  * @param {Array} pages - List of pages to process
  * @param {Object} confluenceClient - Confluence API client
  * @param {Object} confluenceConfig - Confluence configuration
  * @param {string} parentPageId - Parent page ID
  * @param {string} spaceKey - Parent page ID
  * @param {Object} attachmentMappings - Mapping of attachments
+ * @param {Object} pageIdMap - Map of page titles to their IDs
+ * @param {Object} pageFixes - Map of original titles to fixed titles
  * @returns {Promise<void>}
  */
-async function processALLPages(
+async function processAllPages(
   pages,
   confluenceClient,
   confluenceConfig,
   spaceKey,
   parentPageId,
   attachmentMappings,
-  pageIdMap
+  pageIdMap,
+  pageFixes
 ) {
   for (const page of pages) {
     try {
+      const pageTitle = pageFixes[page.title] || page.title;
       const placeholderHtml = `<p>This page is being migrated from Azure DevOps Wiki.</p>`;
-      logger.info(`Processing page: ${page.title}`);
-      // Create or update the page
+
+      logger.info(`Creating initial page: ${pageTitle}`);
+
+      // Create or update the page with placeholder content
       const pageId = await createOrUpdatePage(
         {
-          title: page.title,
+          title: pageTitle,
           content: placeholderHtml,
           parentId: parentPageId,
           path: page.path,
@@ -167,22 +170,25 @@ async function processALLPages(
         parentPageId,
         attachmentMappings,
         pageIdMap,
-        true
+        true,
+        pageFixes
       );
 
       if (pageId) {
-        pageIdMap[page.title] = pageId; // Map title to ID
+        pageIdMap[pageTitle] = pageId;
       }
+
       // Process child pages if any
       if (page.children && page.children.length > 0) {
-        await processALLPages(
+        await processAllPages(
           page.children,
           confluenceClient,
           confluenceConfig,
           spaceKey,
           pageId,
           attachmentMappings,
-          pageIdMap
+          pageIdMap,
+          pageFixes
         );
       }
     } catch (error) {

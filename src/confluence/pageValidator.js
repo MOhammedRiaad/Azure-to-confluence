@@ -1,7 +1,8 @@
 const { logger } = require("../utils");
 const fs = require("fs-extra");
 const path = require("path");
-
+const { loadFixes } = require("./pageNameFixer");
+const { sanitizeTitle } = require("./wikiParser");
 const VALIDATION_FILE = path.join(process.cwd(), ".validation-state.json");
 
 /**
@@ -15,29 +16,44 @@ async function validatePages(confluenceClient, spaceKey, pages) {
   const duplicates = [];
   const processed = new Set();
 
+  // Load existing fixes
+  const pageFixes = await loadFixes();
+
   async function checkPage(page) {
-    if (processed.has(page.title)) {
-      duplicates.push({
-        title: page.title,
-        path: page.path,
-        reason: "Duplicate title within wiki",
-      });
+    // Skip pages that have already been fixed
+    let sanitizedTitle = sanitizeTitle(page.title);
+    const fixedTitle = pageFixes[sanitizedTitle];
+    if (fixedTitle) {
+      logger.info(
+        `Skipping validation for fixed page "${page.title}" → "${fixedTitle}"`
+      );
       return;
     }
 
-    processed.add(page.title);
+    if (processed.has(sanitizedTitle)) {
+      logger.info(`Skipping duplicate title "${sanitizedTitle}"`);
+      // duplicates.push({
+      //   title: sanitizedTitle,
+      //   reason: "Duplicate title within wiki",
+      //   path: page.path,
+      // });
+      return;
+    }
+
+    processed.add(sanitizedTitle);
 
     try {
+      // Check if the page exists in Confluence, accounting for fixes
       const existingPage = await confluenceClient.getPageByTitle(
         spaceKey,
-        page.title
+        sanitizedTitle
       );
-      if (existingPage) {
+      if (existingPage && !pageFixes[sanitizedTitle]) {
         duplicates.push({
-          title: page.title,
+          title: sanitizedTitle,
           confluenceId: existingPage.id,
-          path: page.path,
           reason: "Page already exists in Confluence",
+          path: page.path,
         });
       }
     } catch (error) {
